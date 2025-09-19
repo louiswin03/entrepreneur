@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Search, 
   Filter, 
@@ -12,79 +12,42 @@ import {
   Heart,
   Star,
   Briefcase,
-  Target,
-  Loader2
+  Target
 } from 'lucide-react';
+import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
 import Navigation from '../../../components/Navigation';
-import Link from 'next/link';
-import Image from 'next/image';
 
 const DiscoverPageContent = () => {
-  const { user, profile, fetchEntrepreneurs } = useAuth();
+  const { user, profile } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSector, setSelectedSector] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
-  const [entrepreneurs, setEntrepreneurs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [sectors, setSectors] = useState([]);
-  const [locations, setLocations] = useState([]);
 
-  // Charger les entrepreneurs depuis la base de données
-  useEffect(() => {
-    const loadEntrepreneurs = async () => {
-      try {
-        setLoading(true);
-        const filters = {};
-        
-        if (searchTerm) filters.search = searchTerm;
-        if (selectedSector !== 'all') filters.sector = selectedSector;
-        if (selectedLocation !== 'all') filters.location = selectedLocation;
-        
-        const data = await fetchEntrepreneurs(filters);
-        setEntrepreneurs(data);
-        
-        // Extraire les secteurs uniques
-        const uniqueSectors = [...new Set(data.map(e => e.sector).filter(Boolean))];
-        setSectors(uniqueSectors);
-        
-        // Extraire les localisations uniques
-        const uniqueLocations = [...new Set(data.map(e => e.location).filter(Boolean))];
-        setLocations(uniqueLocations);
-        
-      } catch (error) {
-        console.error('Erreur lors du chargement des entrepreneurs:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadEntrepreneurs();
-  }, [searchTerm, selectedSector, selectedLocation, fetchEntrepreneurs]);
-  
-  // Fonction pour obtenir les initiales d'un nom
-  const getInitials = (name) => {
-    if (!name) return 'U';
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
-  };
-  
-  // Fonction pour gérer la connexion avec un entrepreneur
-  const handleConnect = async (entrepreneurId) => {
-    // Implémentez la logique de connexion ici
-    console.log('Connect with:', entrepreneurId);
-  };
-  
-  // Fonction pour gérer l'envoi d'un message
-  const handleMessage = (entrepreneurId) => {
-    // Implémentez la logique d'envoi de message ici
-    console.log('Message to:', entrepreneurId);
-  };
+  // Données simulées d'entrepreneurs
+  const entrepreneurs = [
+    {
+      id: 1,
+      name: "Marie Dubois",
+      title: "CEO & Co-founder",
+      company: "FinanceAI",
+      sector: "Fintech",
+      location: "Paris, France",
+      experience: "5 ans d'expérience",
+      connections: 234,
+      avatar: "M",
+      description: "Passionnée par l'IA appliquée à la finance. Cherche des partenaires pour révolutionner les services bancaires.",
+      skills: ["AI", "Finance", "Leadership"],
+      lookingFor: ["CTO", "Investisseurs"],
+      online: true,
+      verified: true
+    },
+    {
+      id: 2,
+      name: "Thomas Chen",
+      title: "Founder",
+      company: "GreenTech Solutions",
       sector: "Greentech",
       location: "Lyon, France",
       experience: "3 ans d'expérience",

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Send, 
@@ -10,64 +10,25 @@ import {
   Phone,
   Video,
   Info,
-  Circle,
-  Loader2,
-  User,
-  MessageCircle,
-  Clock,
-  CheckCheck
+  Circle
 } from 'lucide-react';
+import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import Navigation from '../../../components/Navigation';
 import Link from 'next/link';
-import { formatDistanceToNow } from 'date-fns';
-import { fr } from 'date-fns/locale';
-
-interface Profile {
-  id: string;
-  first_name: string;
-  last_name: string;
-  company: string;
-  avatar_url?: string;
-}
-
-interface Message {
-  id: string;
-  content: string;
-  created_at: string;
-  is_read: boolean;
-  sender_id: string;
-  receiver_id: string;
-  sender: Profile;
-  receiver: Profile;
-}
-
-interface Conversation {
-  id: string;
-  user: Profile;
-  lastMessage: Message;
-  unreadCount: number;
-}
 
 const MessagesPageContent = () => {
-  const { user, profile, fetchMessages, sendMessage: sendMessageToUser } = useAuth();
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { user, profile } = useAuth();
+  const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Fonction pour récupérer les conversations
-  const fetchConversations = useCallback(async () => {
-    if (!user) return;
-    
+  const fetchConversations = async () => {
     try {
-      setLoading(true);
-      
       // Récupérer les messages où l'utilisateur est sender ou receiver
       const { data: messagesData, error } = await supabase
         .from('messages')
@@ -82,288 +43,11 @@ const MessagesPageContent = () => {
             id,
             first_name,
             last_name,
-            company,
-            avatar_url
+            company
           ),
           receiver:profiles!messages_receiver_id_fkey(
             id,
             first_name,
-            last_name,
-            company,
-            avatar_url
-          )
-        `)
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      // Grouper les messages par conversation
-      const conversationsMap = new Map();
-      
-      messagesData?.forEach(message => {
-        const otherUserId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
-        const otherUser = message.sender_id === user.id ? message.receiver : message.sender;
-        
-        if (!conversationsMap.has(otherUserId)) {
-          conversationsMap.set(otherUserId, {
-            id: otherUserId,
-            user: otherUser,
-            messages: [],
-            unreadCount: 0
-          });
-        }
-        
-        const conversation = conversationsMap.get(otherUserId);
-        conversation.messages.push(message);
-        
-        // Compter les messages non lus
-        if (!message.is_read && message.sender_id !== user.id) {
-          conversation.unreadCount++;
-        }
-      });
-      
-      // Créer un tableau de conversations avec le dernier message
-      const formattedConversations = Array.from(conversationsMap.values()).map(conv => ({
-        id: conv.id,
-        user: conv.user,
-        lastMessage: conv.messages[0], // Le plus récent d'abord
-        unreadCount: conv.unreadCount
-      }));
-      
-      setConversations(formattedConversations);
-      
-      // Sélectionner la première conversation par défaut (sauf si déjà sélectionnée)
-      if (formattedConversations.length > 0 && !selectedConversation) {
-        setSelectedConversation({
-          id: formattedConversations[0].id,
-          user: formattedConversations[0].user,
-          lastMessage: formattedConversations[0].lastMessage,
-          unreadCount: 0
-        });
-        
-        // Charger les messages de cette conversation
-        await fetchMessagesForUser(formattedConversations[0].id);
-      }
-      
-    } catch (error) {
-      console.error('Erreur lors du chargement des conversations:', error);
-    } finally {
-      setLoading(false);
-      setIsInitialLoad(false);
-    }
-  }, [user, selectedConversation]);
-  
-  // Fonction pour récupérer les messages d'une conversation spécifique
-  const fetchMessagesForUser = async (otherUserId: string) => {
-    if (!user) return;
-    
-    try {
-      setLoading(true);
-      
-      // Récupérer les messages entre l'utilisateur actuel et l'autre utilisateur
-      const { data: messagesData, error } = await supabase
-        .from('messages')
-        .select(`
-          id,
-          content,
-          created_at,
-          is_read,
-          sender_id,
-          receiver_id,
-          sender:profiles!messages_sender_id_fkey(
-            id,
-            first_name,
-            last_name,
-            company,
-            avatar_url
-          )
-        `)
-        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
-        .order('created_at', { ascending: true }); // Plus ancien en premier
-      
-      if (error) throw error;
-      
-      setMessages(messagesData || []);
-      
-      // Marquer les messages comme lus
-      await markMessagesAsRead(otherUserId);
-      
-      // Mettre à jour le compteur de messages non lus dans la liste des conversations
-      setConversations(prev => 
-        prev.map(conv => 
-          conv.id === otherUserId 
-            ? { ...conv, unreadCount: 0 } 
-            : conv
-        )
-      );
-      
-    } catch (error) {
-      console.error('Erreur lors du chargement des messages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Marquer les messages comme lus
-  const markMessagesAsRead = async (otherUserId: string) => {
-    if (!user) return;
-    
-    try {
-      await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('receiver_id', user.id)
-        .eq('sender_id', otherUserId)
-        .eq('is_read', false);
-    } catch (error) {
-      console.error('Erreur lors du marquage des messages comme lus:', error);
-    }
-  };
-  
-  // Envoyer un message
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!newMessage.trim() || !selectedConversation || !user) return;
-    
-    try {
-      setSending(true);
-      
-      // Créer un message optimiste
-      const tempId = `temp-${Date.now()}`;
-      const optimisticMessage = {
-        id: tempId,
-        content: newMessage,
-        created_at: new Date().toISOString(),
-        is_read: false,
-        sender_id: user.id,
-        receiver_id: selectedConversation.id,
-        sender: {
-          id: user.id,
-          first_name: profile?.first_name || '',
-          last_name: profile?.last_name || '',
-          company: profile?.company || '',
-          avatar_url: profile?.avatar_url || ''
-        }
-      };
-      
-      // Mettre à jour l'UI immédiatement
-      setMessages(prev => [...prev, optimisticMessage]);
-      setNewMessage('');
-      
-      // Faire défiler vers le bas
-      setTimeout(() => {
-        const messagesContainer = document.getElementById('messages-container');
-        if (messagesContainer) {
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-      }, 100);
-      
-      // Envoyer le message au serveur
-      const sentMessage = await sendMessageToUser(selectedConversation.id, newMessage);
-      
-      if (sentMessage) {
-        // Remplacer le message optimiste par le message réel du serveur
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempId ? { ...sentMessage, sender: optimisticMessage.sender } : msg
-          )
-        );
-        
-        // Mettre à jour la dernière conversation
-        await fetchConversations();
-      }
-      
-    } catch (error) {
-      console.error('Erreur lors de l\'envoi du message:', error);
-      // Afficher un message d'erreur à l'utilisateur
-    } finally {
-      setSending(false);
-    }
-  };
-  
-  // Charger les conversations au montage du composant
-  useEffect(() => {
-    fetchConversations();
-    
-    // S'abonner aux nouveaux messages en temps réel
-    const subscription = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'messages',
-          filter: `or(receiver_id=eq.${user?.id},sender_id=eq.${user?.id})`
-        },
-        (payload) => {
-          const newMessage = payload.new as Message;
-          
-          // Si le message est pour la conversation active, l'ajouter
-          if (selectedConversation && 
-              ((newMessage.sender_id === selectedConversation.id && newMessage.receiver_id === user?.id) ||
-               (newMessage.receiver_id === selectedConversation.id && newMessage.sender_id === user?.id))) {
-            
-            setMessages(prev => [...prev, newMessage]);
-            
-            // Marquer comme lu si c'est l'utilisateur actuel qui le reçoit
-            if (newMessage.receiver_id === user?.id) {
-              markMessagesAsRead(newMessage.sender_id);
-            }
-            
-            // Faire défiler vers le bas
-            setTimeout(() => {
-              const messagesContainer = document.getElementById('messages-container');
-              if (messagesContainer) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-              }
-            }, 100);
-          }
-          
-          // Mettre à jour la liste des conversations
-          fetchConversations();
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [user, selectedConversation, fetchConversations]);
-  
-  // Charger les messages lorsqu'une conversation est sélectionnée
-  useEffect(() => {
-    if (selectedConversation && !isInitialLoad) {
-      fetchMessagesForUser(selectedConversation.id);
-    }
-  }, [selectedConversation]);
-  
-  // Fonction pour formater la date
-  const formatDate = (dateString: string) => {
-    return formatDistanceToNow(new Date(dateString), { 
-      addSuffix: true,
-      locale: fr 
-    });
-  };
-  
-  // Fonction pour obtenir les initiales d'un nom
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || 'U';
-  };
-  
-  // Afficher un indicateur de chargement
-  if (loading && isInitialLoad) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <Navigation />
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-        </div>
-      </div>
-    );
-  }
             last_name,
             company
           )
