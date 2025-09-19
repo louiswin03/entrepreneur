@@ -1,28 +1,25 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
-import { withAuth } from '../../../lib/withAuth';
+import { ProtectedRoute } from '../../../lib/ProtectedRoute';
+import { useAuth } from '../../../lib/AuthContext';
+import Navigation from '../../../components/Navigation';
 import { 
-  Bell, 
   MessageCircle, 
   Users, 
   Calendar, 
   TrendingUp, 
   Search, 
   Plus,
-  Network,
-  Settings,
-  LogOut,
   UserPlus,
   Target,
   Star
 } from 'lucide-react';
 import Link from 'next/link';
 
-const Dashboard = ({ user }: { user: any }) => {
-  // États pour les données réelles
+const DashboardContent = () => {
+  const { user, profile } = useAuth();
   const [notifications, setNotifications] = useState(0);
   const [connections, setConnections] = useState([]);
   const [recentMessages, setRecentMessages] = useState([]);
@@ -62,16 +59,17 @@ const Dashboard = ({ user }: { user: any }) => {
 
       const formattedConnections = data?.map(conn => ({
         id: conn.id,
-        name: `${conn.connected_user.first_name} ${conn.connected_user.last_name}`,
-        company: conn.connected_user.company,
+        name: `${conn.connected_user.first_name || ''} ${conn.connected_user.last_name || ''}`.trim(),
+        company: conn.connected_user.company || 'Entrepreneur',
         sector: conn.connected_user.position || 'Entrepreneur',
-        avatar: conn.connected_user.first_name.charAt(0),
-        status: 'online' // On peut simplifier en supposant tout le monde en ligne
+        avatar: (conn.connected_user.first_name || 'U').charAt(0).toUpperCase(),
+        status: 'online'
       })) || [];
 
       setConnections(formattedConnections);
     } catch (error) {
       console.error('Erreur lors de la récupération des connexions:', error);
+      setConnections([]);
     }
   };
 
@@ -101,7 +99,7 @@ const Dashboard = ({ user }: { user: any }) => {
 
       const formattedMessages = data?.map(msg => ({
         id: msg.id,
-        from: `${msg.sender.first_name} ${msg.sender.last_name}`,
+        from: `${msg.sender?.first_name || ''} ${msg.sender?.last_name || ''}`.trim() || 'Utilisateur',
         message: msg.content.substring(0, 50) + (msg.content.length > 50 ? '...' : ''),
         time: formatTimeAgo(new Date(msg.created_at)),
         unread: !msg.is_read
@@ -110,6 +108,7 @@ const Dashboard = ({ user }: { user: any }) => {
       setRecentMessages(formattedMessages);
     } catch (error) {
       console.error('Erreur lors de la récupération des messages:', error);
+      setRecentMessages([]);
     }
   };
 
@@ -135,59 +134,40 @@ const Dashboard = ({ user }: { user: any }) => {
         id: event.id,
         title: event.title,
         date: formatDate(new Date(event.date)),
-        time: event.time,
+        time: event.time || '00:00',
         attendees: event.participants_count || 0
       })) || [];
 
       setUpcomingEvents(formattedEvents);
     } catch (error) {
       console.error('Erreur lors de la récupération des événements:', error);
+      setUpcomingEvents([]);
     }
   };
 
   // Fonction pour récupérer les statistiques
   const fetchStats = async () => {
     try {
-      // Récupérer le nombre de connexions
-      const { count: connectionsCount, error: connectionsError } = await supabase
+      const { count: connectionsCount } = await supabase
         .from('connections')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user?.id)
         .eq('status', 'accepted');
 
-      if (connectionsError) {
-        console.error('Error fetching connections count:', connectionsError);
-      }
-
-      // Récupérer le nombre de messages
-      const { count: messagesCount, error: messagesError } = await supabase
+      const { count: messagesCount } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
         .eq('receiver_id', user?.id);
 
-      if (messagesError) {
-        console.error('Error fetching messages count:', messagesError);
-      }
-
-      // Récupérer le nombre d'événements auxquels l'utilisateur participe
-      const { count: eventsCount, error: eventsError } = await supabase
+      const { count: eventsCount } = await supabase
         .from('event_participants')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user?.id);
 
-      if (eventsError) {
-        console.error('Error fetching events count:', eventsError);
-      }
-
-      // Récupérer les vues de profil
-      const { count: profileViewsCount, error: profileViewsError } = await supabase
+      const { count: profileViewsCount } = await supabase
         .from('profile_views')
         .select('*', { count: 'exact', head: true })
         .eq('profile_user_id', user?.id);
-
-      if (profileViewsError) {
-        console.error('Error fetching profile views count:', profileViewsError);
-      }
 
       setStats({
         connections: connectionsCount || 0,
@@ -197,6 +177,12 @@ const Dashboard = ({ user }: { user: any }) => {
       });
     } catch (error) {
       console.error('Erreur lors de la récupération des statistiques:', error);
+      setStats({
+        connections: 0,
+        messages: 0,
+        events: 0,
+        profileViews: 0
+      });
     }
   };
 
@@ -212,11 +198,12 @@ const Dashboard = ({ user }: { user: any }) => {
       setNotifications(count || 0);
     } catch (error) {
       console.error('Erreur lors de la récupération des notifications:', error);
+      setNotifications(0);
     }
   };
 
   // Fonctions utilitaires pour le formatage
-  const formatTimeAgo = (date: Date) => {
+  const formatTimeAgo = (date) => {
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
     const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
@@ -234,8 +221,8 @@ const Dashboard = ({ user }: { user: any }) => {
     }
   };
 
-  const formatDate = (date: Date) => {
-    const options: Intl.DateTimeFormatOptions = { 
+  const formatDate = (date) => {
+    const options = { 
       day: 'numeric', 
       month: 'short' 
     };
@@ -266,7 +253,7 @@ const Dashboard = ({ user }: { user: any }) => {
     { 
       label: "Connexions", 
       value: stats.connections.toString(), 
-      change: "+12", // Vous pouvez calculer ça aussi depuis la BD
+      change: "+12", 
       color: "text-purple-400" 
     },
     { 
@@ -299,55 +286,14 @@ const Dashboard = ({ user }: { user: any }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="bg-black/20 backdrop-blur-md border-b border-white/10 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <Link href="/" className="flex items-center space-x-2">
-              <Network className="h-8 w-8 text-purple-400" />
-              <span className="text-2xl font-bold text-white">EntrepreneurConnect</span>
-            </Link>
-            
-            <div className="hidden md:flex items-center space-x-8">
-              <Link href="/dashboard" className="text-purple-400 font-semibold">Dashboard</Link>
-              <Link href="/discover" className="text-gray-300 hover:text-white transition-colors">Découvrir</Link>
-              <Link href="/messages" className="text-gray-300 hover:text-white transition-colors">Messages</Link>
-              <Link href="/events" className="text-gray-300 hover:text-white transition-colors">Événements</Link>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <button className="relative p-2 text-gray-300 hover:text-white transition-colors">
-                <Bell className="h-6 w-6" />
-                {notifications > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {notifications}
-                  </span>
-                )}
-              </button>
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                  {user?.user_metadata?.first_name?.charAt(0) || 'U'}
-                </div>
-                <div className="hidden md:block">
-                  <div className="text-white font-semibold">
-                    {user?.user_metadata?.first_name} {user?.user_metadata?.last_name}
-                  </div>
-                  <div className="text-gray-400 text-sm">
-                    {user?.user_metadata?.company || 'Entrepreneur'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       {/* Dashboard Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">
-            Bienvenue, {user?.user_metadata?.first_name || 'Entrepreneur'} ! 👋
+            Bienvenue, {profile?.first_name || 'Entrepreneur'} ! 👋
           </h1>
           <p className="text-gray-300 text-lg">Voici un aperçu de ton activité entrepreneuriale</p>
         </div>
@@ -372,7 +318,7 @@ const Dashboard = ({ user }: { user: any }) => {
             <p className="text-gray-400 text-sm">{upcomingEvents.length} à venir</p>
           </Link>
           <Link href="/profile" className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all group text-center">
-            <Settings className="h-8 w-8 text-orange-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+            <Users className="h-8 w-8 text-orange-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
             <h3 className="text-white font-semibold">Profil</h3>
             <p className="text-gray-400 text-sm">Gérer</p>
           </Link>
@@ -408,11 +354,7 @@ const Dashboard = ({ user }: { user: any }) => {
                 <div key={connection.id} className="flex items-center space-x-4 p-3 rounded-xl hover:bg-white/10 transition-all cursor-pointer">
                   <div className="relative">
                     <div className="w-12 h-12 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-bold">
-                      {typeof connection.avatar === 'string' && connection.avatar.startsWith('http') ? (
-                        <img src={connection.avatar} alt={connection.name} className="w-12 h-12 rounded-full object-cover" />
-                      ) : (
-                        connection.avatar
-                      )}
+                      {connection.avatar}
                     </div>
                     <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-900 ${connection.status === 'online' ? 'bg-green-400' : 'bg-gray-400'}`}></div>
                   </div>
@@ -536,7 +478,7 @@ const Dashboard = ({ user }: { user: any }) => {
                   <TrendingUp className="h-5 w-5 text-orange-400 mr-2" />
                   <span className="text-white font-semibold">Profil optimisé</span>
                 </div>
-                <p className="text-gray-300 text-sm mb-3">Ajouter tes compétences augmentera ta visibilité de 40%</p>
+                <p className="text-gray-300 text-sm mb-3">Compléter ton profil augmentera ta visibilité de 40%</p>
                 <Link href="/profile" className="text-orange-400 hover:text-orange-300 transition-colors text-sm font-semibold">
                   Compléter →
                 </Link>
@@ -551,14 +493,13 @@ const Dashboard = ({ user }: { user: any }) => {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
-              <Network className="h-6 w-6 text-purple-400" />
               <span className="text-xl font-bold text-white">EntrepreneurConnect</span>
             </div>
             <div className="flex space-x-8 text-gray-400">
               <Link href="/discover" className="hover:text-white transition-colors">Découvrir</Link>
               <Link href="/events" className="hover:text-white transition-colors">Événements</Link>
-              <Link href="/login" className="hover:text-white transition-colors">Connexion</Link>
-              <Link href="/register" className="hover:text-white transition-colors">S'inscrire</Link>
+              <Link href="/messages" className="hover:text-white transition-colors">Messages</Link>
+              <Link href="/profile" className="hover:text-white transition-colors">Profil</Link>
             </div>
           </div>
           <div className="border-t border-white/10 mt-8 pt-8 text-center">
@@ -570,4 +511,12 @@ const Dashboard = ({ user }: { user: any }) => {
   );
 };
 
-export default withAuth(Dashboard);
+const Dashboard = () => {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
+  );
+};
+
+export default Dashboard;

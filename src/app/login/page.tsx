@@ -1,3 +1,4 @@
+// src/app/login/page.tsx
 "use client";
 
 import React, { useState } from 'react';
@@ -19,18 +20,38 @@ const LoginPage = () => {
     setLoading(true);
     setError('');
 
+    if (!email || !password) {
+      setError('Email et mot de passe sont requis');
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erreur connexion:', error);
+        throw error;
+      }
 
+      console.log('Connexion réussie:', data);
+      
       // Redirection vers le dashboard après connexion réussie
       router.push('/dashboard');
     } catch (error) {
-      setError(error.message);
+      console.error('Erreur de connexion:', error);
+      
+      // Messages d'erreur plus user-friendly
+      if (error.message.includes('Invalid login credentials')) {
+        setError('Email ou mot de passe incorrect');
+      } else if (error.message.includes('Email not confirmed')) {
+        setError('Veuillez confirmer votre email avant de vous connecter');
+      } else {
+        setError(error.message || 'Une erreur est survenue lors de la connexion');
+      }
     } finally {
       setLoading(false);
     }
@@ -124,6 +145,13 @@ const LoginPage = () => {
               {!loading && <ArrowRight className="ml-2 h-5 w-5" />}
             </button>
           </form>
+
+          {/* Lien mot de passe oublié */}
+          <div className="text-center mt-6">
+            <Link href="/forgot-password" className="text-gray-400 hover:text-gray-300 transition-colors text-sm">
+              Mot de passe oublié ?
+            </Link>
+          </div>
 
           {/* Lien vers inscription */}
           <div className="text-center mt-8">

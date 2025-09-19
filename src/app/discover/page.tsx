@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -9,46 +9,82 @@ import {
   Users, 
   MessageCircle, 
   UserPlus,
-  Network,
-  Bell,
-  Star,
   Heart,
-  X,
+  Star,
   Briefcase,
-  Calendar,
-  Target
+  Target,
+  Loader2
 } from 'lucide-react';
+import { useAuth } from '../../../lib/AuthContext';
+import Navigation from '../../../components/Navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 
-const DiscoverPage = () => {
+const DiscoverPageContent = () => {
+  const { user, profile, fetchEntrepreneurs } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSector, setSelectedSector] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [entrepreneurs, setEntrepreneurs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sectors, setSectors] = useState([]);
+  const [locations, setLocations] = useState([]);
 
-  // Données simulées d'entrepreneurs
-  const entrepreneurs = [
-    {
-      id: 1,
-      name: "Marie Dubois",
-      title: "CEO & Co-founder",
-      company: "FinanceAI",
-      sector: "Fintech",
-      location: "Paris, France",
-      experience: "5 ans d'expérience",
-      connections: 234,
-      avatar: "M",
-      description: "Passionnée par l'IA appliquée à la finance. Cherche des partenaires pour révolutionner les services bancaires.",
-      skills: ["AI", "Finance", "Leadership"],
-      lookingFor: ["CTO", "Investisseurs"],
-      online: true,
-      verified: true
-    },
-    {
-      id: 2,
-      name: "Thomas Chen",
-      title: "Founder",
-      company: "GreenTech Solutions",
+  // Charger les entrepreneurs depuis la base de données
+  useEffect(() => {
+    const loadEntrepreneurs = async () => {
+      try {
+        setLoading(true);
+        const filters = {};
+        
+        if (searchTerm) filters.search = searchTerm;
+        if (selectedSector !== 'all') filters.sector = selectedSector;
+        if (selectedLocation !== 'all') filters.location = selectedLocation;
+        
+        const data = await fetchEntrepreneurs(filters);
+        setEntrepreneurs(data);
+        
+        // Extraire les secteurs uniques
+        const uniqueSectors = [...new Set(data.map(e => e.sector).filter(Boolean))];
+        setSectors(uniqueSectors);
+        
+        // Extraire les localisations uniques
+        const uniqueLocations = [...new Set(data.map(e => e.location).filter(Boolean))];
+        setLocations(uniqueLocations);
+        
+      } catch (error) {
+        console.error('Erreur lors du chargement des entrepreneurs:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadEntrepreneurs();
+  }, [searchTerm, selectedSector, selectedLocation, fetchEntrepreneurs]);
+  
+  // Fonction pour obtenir les initiales d'un nom
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+  
+  // Fonction pour gérer la connexion avec un entrepreneur
+  const handleConnect = async (entrepreneurId) => {
+    // Implémentez la logique de connexion ici
+    console.log('Connect with:', entrepreneurId);
+  };
+  
+  // Fonction pour gérer l'envoi d'un message
+  const handleMessage = (entrepreneurId) => {
+    // Implémentez la logique d'envoi de message ici
+    console.log('Message to:', entrepreneurId);
+  };
       sector: "Greentech",
       location: "Lyon, France",
       experience: "3 ans d'expérience",
@@ -141,34 +177,7 @@ const DiscoverPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="bg-black/20 backdrop-blur-md border-b border-white/10 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <Link href="/" className="flex items-center space-x-2">
-              <Network className="h-8 w-8 text-purple-400" />
-              <span className="text-2xl font-bold text-white">EntrepreneurConnect</span>
-            </Link>
-            
-            <div className="hidden md:flex items-center space-x-8">
-              <Link href="/dashboard" className="text-gray-300 hover:text-white transition-colors">Dashboard</Link>
-              <Link href="/discover" className="text-purple-400 font-semibold">Découvrir</Link>
-              <Link href="/messages" className="text-gray-300 hover:text-white transition-colors">Messages</Link>
-              <Link href="/events" className="text-gray-300 hover:text-white transition-colors">Événements</Link>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <button className="relative p-2 text-gray-300 hover:text-white transition-colors">
-                <Bell className="h-6 w-6" />
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
-              </button>
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                L
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
@@ -353,6 +362,14 @@ const DiscoverPage = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const DiscoverPage = () => {
+  return (
+    <ProtectedRoute>
+      <DiscoverPageContent />
+    </ProtectedRoute>
   );
 };
 

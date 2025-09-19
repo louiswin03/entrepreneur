@@ -1,42 +1,14 @@
-
 "use client";
 
-import React, { useEffect } from 'react';  // ← Ajouter useEffect ici
+import React from 'react';
 import Link from 'next/link';
-import { ArrowRight, Users, MessageCircle, Calendar, TrendingUp, Star, CheckCircle, Network } from 'lucide-react';
-import { supabase } from '../../lib/supabase';  // ← Chemin relatif, pas absolu !
-
-
-
-// À ajouter dans le composant, juste après la déclaration
-
-
+import { ArrowRight, Users, MessageCircle, Calendar, TrendingUp, Star, CheckCircle } from 'lucide-react';
+import Navigation from '../../components/Navigation';
 
 const EntrepreneurHomepage = () => {
-
- 
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="bg-black/20 backdrop-blur-md border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-2">
-              <Network className="h-8 w-8 text-purple-400" />
-              <span className="text-2xl font-bold text-white">EntrepreneurConnect</span>
-            </div>
-            <div className="hidden md:flex items-center space-x-8">
-              <Link href="/discover" className="text-gray-300 hover:text-white transition-colors">Découvrir</Link>
-              <Link href="/events" className="text-gray-300 hover:text-white transition-colors">Événements</Link>
-              <Link href="/login" className="text-gray-300 hover:text-white transition-colors">Connexion</Link>
-              <Link href="/register" className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all">
-                Rejoindre
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       {/* Hero Section */}
       <section className="relative py-20 px-4">
@@ -230,7 +202,6 @@ const EntrepreneurHomepage = () => {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
-              <Network className="h-6 w-6 text-purple-400" />
               <span className="text-xl font-bold text-white">EntrepreneurConnect</span>
             </div>
             <div className="flex space-x-8 text-gray-400">

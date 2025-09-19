@@ -1,3 +1,4 @@
+// src/app/register/page.tsx
 "use client";
 
 import React, { useState } from 'react';
@@ -41,6 +42,10 @@ const RegisterPage = () => {
       setError('Les mots de passe ne correspondent pas');
       return;
     }
+    if (formData.password.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
     setError('');
     setCurrentStep(2);
   };
@@ -59,9 +64,20 @@ const RegisterPage = () => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
+        options: {
+          data: {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            company: formData.company,
+            position: formData.position,
+          }
+        }
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        console.error('Erreur auth:', authError);
+        throw authError;
+      }
 
       // 2. Créer le profil utilisateur
       if (authData.user) {
@@ -71,19 +87,23 @@ const RegisterPage = () => {
             id: authData.user.id,
             first_name: formData.firstName,
             last_name: formData.lastName,
-            company: formData.company,
-            position: formData.position,
-            bio: `Entrepreneur ${formData.experience} dans le secteur ${formData.sector}`,
+            company: formData.company || null,
+            position: formData.position || null,
+            bio: formData.company ? `${formData.position} chez ${formData.company}` : `Entrepreneur ${formData.experience}`,
           });
 
-        if (profileError) throw profileError;
+        if (profileError) {
+          console.error('Erreur profil:', profileError);
+          throw profileError;
+        }
       }
 
       // 3. Redirection vers le dashboard
       alert('Compte créé avec succès ! Vérifiez votre email pour confirmer votre compte.');
-      router.push('/dashboard');
+      router.push('/login');
     } catch (error) {
-      setError(error.message);
+      console.error('Erreur inscription:', error);
+      setError(error.message || 'Une erreur est survenue lors de l\'inscription');
     } finally {
       setLoading(false);
     }

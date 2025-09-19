@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   Building, 
@@ -17,36 +17,193 @@ import {
   Star,
   Award,
   Target,
-  Users,
+  Users as UsersIcon,
   MessageCircle,
   Calendar,
-  Network,
-  Bell,
   Settings,
   Lock,
   Eye,
-  Briefcase
+  Briefcase,
+  Loader2,
+  Check
 } from 'lucide-react';
-import Link from 'next/link';
+import { useAuth } from '../../../lib/AuthContext';
+import Navigation from '../../../components/Navigation';
+import { useRouter } from 'next/navigation';
 
-const ProfilePage = () => {
+const ProfilePageContent = () => {
+  const { user, profile, updateProfile, loading: authLoading } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
+  const [newSkill, setNewSkill] = useState('');
+  const [newLookingFor, setNewLookingFor] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const [profileData, setProfileData] = useState({
-    firstName: 'Louis',
-    lastName: 'Martin',
-    email: 'louis.martin@startup.com',
-    phone: '+33 6 12 34 56 78',
-    company: 'StartupCorp',
-    position: 'CEO & Fondateur',
-    location: 'Paris, France',
-    website: 'www.startupcorp.fr',
-    bio: 'Entrepreneur passionné par l\'innovation technologique. 8 ans d\'expérience dans le développement de produits SaaS. Mentor et investisseur angel.',
-    sector: 'SaaS',
-    experience: 'Entrepreneur expérimenté',
-    lookingFor: ['Investisseurs', 'Mentors', 'Partenaires techniques'],
-    skills: ['Leadership', 'Product Management', 'Fundraising', 'SaaS', 'B2B Sales']
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    company: '',
+    position: '',
+    location: '',
+    website: '',
+    bio: '',
+    sector: '',
+    experience: '',
+    lookingFor: [] as string[],
+    skills: [] as string[],
+    avatar_url: '',
+    cover_url: ''
   });
+  const router = useRouter();
+
+  // Mettre à jour les données du profil lorsque le profil est chargé
+  useEffect(() => {
+    if (profile) {
+      setProfileData({
+        first_name: profile.first_name || '',
+        last_name: profile.last_name || '',
+        email: user?.email || '',
+        phone: profile.phone || '',
+        company: profile.company || '',
+        position: profile.position || '',
+        location: profile.location || '',
+        website: profile.website || '',
+        bio: profile.bio || '',
+        sector: profile.sector || '',
+        experience: profile.experience || '',
+        lookingFor: profile.lookingFor || [],
+        skills: profile.skills || [],
+        avatar_url: profile.avatar_url || '',
+        cover_url: profile.cover_url || ''
+      });
+    }
+  }, [profile, user]);
+
+  // Gérer les changements dans le formulaire
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setProfileData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Ajouter une compétence
+  const addSkill = () => {
+    if (newSkill.trim() && !profileData.skills.includes(newSkill.trim())) {
+      setProfileData(prev => ({
+        ...prev,
+        skills: [...prev.skills, newSkill.trim()]
+      }));
+      setNewSkill('');
+    }
+  };
+
+  // Supprimer une compétence
+  const removeSkill = (skillToRemove: string) => {
+    setProfileData(prev => ({
+      ...prev,
+      skills: prev.skills.filter(skill => skill !== skillToRemove)
+    }));
+  };
+
+  // Ajouter un élément recherché
+  const addLookingFor = () => {
+    if (newLookingFor.trim() && !profileData.lookingFor.includes(newLookingFor.trim())) {
+      setProfileData(prev => ({
+        ...prev,
+        lookingFor: [...prev.lookingFor, newLookingFor.trim()]
+      }));
+      setNewLookingFor('');
+    }
+  };
+
+  // Supprimer un élément recherché
+  const removeLookingFor = (itemToRemove: string) => {
+    setProfileData(prev => ({
+      ...prev,
+      lookingFor: prev.lookingFor.filter(item => item !== itemToRemove)
+    }));
+  };
+
+  // Gérer la soumission du formulaire
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    
+    try {
+      // Mettre à jour le profil dans la base de données
+      const updatedProfile = await updateProfile({
+        ...profileData,
+        // S'assurer que les tableaux ne sont pas undefined
+        skills: profileData.skills || [],
+        lookingFor: profileData.lookingFor || []
+      });
+      
+      if (updatedProfile) {
+        setIsEditing(false);
+      }
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du profil:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Gérer le téléchargement d'images
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'cover') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploading(true);
+    
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${type}_${user?.id}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+      const filePath = `${type === 'avatar' ? 'avatars' : 'covers'}/${fileName}`;
+      
+      // Télécharger l'image vers le stockage Supabase
+      const { error: uploadError } = await supabase.storage
+        .from('profile-images')
+        .upload(filePath, file);
+      
+      if (uploadError) throw uploadError;
+      
+      // Obtenir l'URL publique de l'image
+      const { data: { publicUrl } } = supabase.storage
+        .from('profile-images')
+        .getPublicUrl(filePath);
+      
+      // Mettre à jour le profil avec la nouvelle URL d'image
+      const fieldToUpdate = type === 'avatar' ? 'avatar_url' : 'cover_url';
+      await updateProfile({
+        ...profileData,
+        [fieldToUpdate]: publicUrl
+      });
+      
+      // Mettre à jour l'état local
+      setProfileData(prev => ({
+        ...prev,
+        [fieldToUpdate]: publicUrl
+      }));
+      
+    } catch (error) {
+      console.error(`Erreur lors du téléchargement de l'image ${type}:`, error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Afficher un indicateur de chargement pendant le chargement initial
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
 
   const [newSkill, setNewSkill] = useState('');
   const [newLookingFor, setNewLookingFor] = useState('');
@@ -106,34 +263,7 @@ const ProfilePage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Navigation */}
-      <nav className="bg-black/20 backdrop-blur-md border-b border-white/10 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <Link href="/" className="flex items-center space-x-2">
-              <Network className="h-8 w-8 text-purple-400" />
-              <span className="text-2xl font-bold text-white">EntrepreneurConnect</span>
-            </Link>
-            
-            <div className="hidden md:flex items-center space-x-8">
-              <Link href="/dashboard" className="text-gray-300 hover:text-white transition-colors">Dashboard</Link>
-              <Link href="/discover" className="text-gray-300 hover:text-white transition-colors">Découvrir</Link>
-              <Link href="/messages" className="text-gray-300 hover:text-white transition-colors">Messages</Link>
-              <Link href="/events" className="text-gray-300 hover:text-white transition-colors">Événements</Link>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <button className="relative p-2 text-gray-300 hover:text-white transition-colors">
-                <Bell className="h-6 w-6" />
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
-              </button>
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                L
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navigation />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Profile Header */}
@@ -142,7 +272,7 @@ const ProfilePage = () => {
             <div className="flex items-center space-x-6">
               <div className="relative">
                 <div className="w-24 h-24 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-3xl">
-                  L
+                  {(profileData.firstName || 'U').charAt(0).toUpperCase()}
                 </div>
                 <button className="absolute -bottom-2 -right-2 bg-purple-600 text-white p-2 rounded-full hover:bg-purple-700 transition-colors">
                   <Camera className="h-4 w-4" />
@@ -515,6 +645,14 @@ const ProfilePage = () => {
         )}
       </div>
     </div>
+  );
+};
+
+const ProfilePage = () => {
+  return (
+    <ProtectedRoute>
+      <ProfilePageContent />
+    </ProtectedRoute>
   );
 };
 
