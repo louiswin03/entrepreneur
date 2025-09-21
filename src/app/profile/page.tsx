@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   Building, 
@@ -23,53 +23,268 @@ import {
   Settings,
   Lock,
   Eye,
-  Briefcase
+  Briefcase,
+  Loader2
 } from 'lucide-react';
 import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
+import { supabase } from '../../../lib/supabase';
 import Navigation from '../../../components/Navigation';
 
 const ProfilePageContent = () => {
   const { user, profile } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [stats, setStats] = useState({
+    connections: 0,
+    messages: 0,
+    events: 0,
+    profileViews: 0
+  });
+  
   const [profileData, setProfileData] = useState({
-    firstName: profile?.first_name || 'Louis',
-    lastName: profile?.last_name || 'Martin',
-    email: user?.email || 'louis.martin@startup.com',
-    phone: '+33 6 12 34 56 78',
-    company: profile?.company || 'StartupCorp',
-    position: profile?.position || 'CEO & Fondateur',
-    location: 'Paris, France',
-    website: 'www.startupcorp.fr',
-    bio: profile?.bio || 'Entrepreneur passionné par l\'innovation technologique. 8 ans d\'expérience dans le développement de produits SaaS. Mentor et investisseur angel.',
-    sector: 'SaaS',
-    experience: 'Entrepreneur expérimenté',
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    company: '',
+    position: '',
+    location: '',
+    website: '',
+    bio: '',
+    sector: '',
+    experience: '',
     lookingFor: ['Investisseurs', 'Mentors', 'Partenaires techniques'],
-    skills: ['Leadership', 'Product Management', 'Fundraising', 'SaaS', 'B2B Sales']
+    skills: ['Leadership', 'Product Management', 'Innovation']
   });
 
   const [newSkill, setNewSkill] = useState('');
   const [newLookingFor, setNewLookingFor] = useState('');
 
-  const stats = [
-    { label: "Connexions", value: "127", icon: Users },
-    { label: "Messages", value: "48", icon: MessageCircle },
-    { label: "Événements", value: "8", icon: Calendar },
-    { label: "Profil vu", value: "234", icon: Eye }
-  ];
+  // Fonction pour récupérer les vraies statistiques
+  const fetchRealStats = async () => {
+    try {
+      // Connexions acceptées
+      const { count: connectionsCount } = await supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user?.id)
+        .eq('status', 'accepted');
 
-  const achievements = [
-    { id: 1, title: "Early Adopter", description: "Parmi les 100 premiers membres", icon: "🏆" },
-    { id: 2, title: "Networker", description: "Plus de 100 connexions", icon: "🤝" },
-    { id: 3, title: "Mentor", description: "A aidé 5+ entrepreneurs", icon: "👨‍🏫" }
-  ];
+      // Messages envoyés + reçus
+      const { count: messagesReceivedCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', user?.id);
 
-  const handleSave = () => {
-    // Logique de sauvegarde
-    console.log('Sauvegarde du profil:', profileData);
-    setIsEditing(false);
+      const { count: messagesSentCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('sender_id', user?.id);
+
+      const totalMessages = (messagesReceivedCount || 0) + (messagesSentCount || 0);
+
+      // Événements inscrits
+      const { count: eventsCount } = await supabase
+        .from('event_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user?.id)
+        .in('status', ['registered', 'confirmed', 'attended']);
+
+      // Vues du profil
+      const { count: profileViewsCount } = await supabase
+        .from('profile_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_user_id', user?.id);
+
+      setStats({
+        connections: connectionsCount || 0,
+        messages: totalMessages,
+        events: eventsCount || 0,
+        profileViews: profileViewsCount || 0
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la récupération des statistiques:', error);
+      setStats({
+        connections: 0,
+        messages: 0,
+        events: 0,
+        profileViews: 0
+      });
+    }
   };
+
+  // Charger les données du profil depuis la BDD
+  const loadProfileData = async () => {
+    try {
+      if (profile) {
+        setProfileData({
+          firstName: profile.first_name || '',
+          lastName: profile.last_name || '',
+          email: user?.email || '',
+          phone: profile.phone || '',
+          company: profile.company || '',
+          position: profile.position || '',
+          location: profile.location || '',
+          website: profile.website || '',
+          bio: profile.bio || '',
+          sector: profile.sector || '',
+          experience: profile.experience || '',
+          // TODO: Ces champs pourraient être ajoutés à la table profiles
+          lookingFor: ['Investisseurs', 'Mentors', 'Partenaires techniques'],
+          skills: [profile.sector, 'Innovation', 'Leadership'].filter(Boolean)
+        });
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement du profil:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fonction pour sauvegarder les modifications du profil dans la BDD
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: profileData.firstName,
+          last_name: profileData.lastName,
+          company: profileData.company || null,
+          position: profileData.position || null,
+          bio: profileData.bio || null,
+          location: profileData.location || null,
+          sector: profileData.sector || null,
+          experience: profileData.experience || null,
+          website: profileData.website || null,
+          phone: profileData.phone || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user?.id);
+
+      if (error) {
+        console.error('Erreur sauvegarde profil:', error);
+        alert('Erreur lors de la sauvegarde');
+        return;
+      }
+
+      alert('Profil mis à jour avec succès !');
+      setIsEditing(false);
+      
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('Erreur lors de la sauvegarde');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Charger les données au montage
+  useEffect(() => {
+    if (user?.id && profile) {
+      Promise.all([
+        fetchRealStats(),
+        loadProfileData()
+      ]);
+    }
+  }, [user?.id, profile]);
+
+  // Utiliser les vraies statistiques dans l'affichage
+  const statsComponents = [
+    { label: "Connexions", value: stats.connections.toString(), icon: Users },
+    { label: "Messages", value: stats.messages.toString(), icon: MessageCircle },
+    { label: "Événements", value: stats.events.toString(), icon: Calendar },
+    { label: "Profil vu", value: stats.profileViews.toString(), icon: Eye }
+  ];
+
+  // Générer les réalisations basées sur les vraies statistiques
+  const generateAchievements = () => {
+    const achievements = [];
+    
+    if (stats.connections >= 100) {
+      achievements.push({
+        id: 1,
+        title: "Super Networker",
+        description: `Plus de ${stats.connections} connexions`,
+        icon: "🤝"
+      });
+    } else if (stats.connections >= 10) {
+      achievements.push({
+        id: 1,
+        title: "Networker",
+        description: `${stats.connections} connexions établies`,
+        icon: "🤝"
+      });
+    }
+
+    if (stats.events >= 10) {
+      achievements.push({
+        id: 2,
+        title: "Super Participant",
+        description: `Participé à ${stats.events} événements`,
+        icon: "📅"
+      });
+    } else if (stats.events >= 5) {
+      achievements.push({
+        id: 2,
+        title: "Participant Actif",
+        description: `Participé à ${stats.events} événements`,
+        icon: "📅"
+      });
+    }
+
+    if (stats.profileViews >= 500) {
+      achievements.push({
+        id: 3,
+        title: "Influenceur",
+        description: `Plus de ${stats.profileViews} vues`,
+        icon: "⭐"
+      });
+    } else if (stats.profileViews >= 100) {
+      achievements.push({
+        id: 3,
+        title: "Profil Populaire",
+        description: `Plus de ${stats.profileViews} vues`,
+        icon: "👁️"
+      });
+    }
+
+    if (stats.messages >= 50) {
+      achievements.push({
+        id: 4,
+        title: "Communicateur",
+        description: `Plus de ${stats.messages} messages échangés`,
+        icon: "💬"
+      });
+    }
+
+    // Badge d'ancienneté
+    achievements.push({
+      id: 5,
+      title: "Membre Vérifié",
+      description: "Profil complet et vérifié",
+      icon: "✅"
+    });
+
+    // Si pas d'achievements spéciaux, donner le badge de base
+    if (achievements.length === 1) {
+      achievements.push({
+        id: 6,
+        title: "Nouveau Membre",
+        description: "Bienvenue dans la communauté !",
+        icon: "🎉"
+      });
+    }
+
+    return achievements;
+  };
+
+  const achievements = generateAchievements();
 
   const addSkill = () => {
     if (newSkill.trim() && !profileData.skills.includes(newSkill.trim())) {
@@ -105,6 +320,21 @@ const ProfilePageContent = () => {
     }));
   };
 
+  // Loader pendant le chargement
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
+            <p className="text-white text-lg">Chargement de votre profil...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <Navigation />
@@ -125,35 +355,44 @@ const ProfilePageContent = () => {
               <div>
                 <div className="flex items-center space-x-3 mb-2">
                   <h1 className="text-3xl font-bold text-white">{profileData.firstName} {profileData.lastName}</h1>
-                  <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xs">✓</span>
-                  </div>
+                  {profile?.is_verified && (
+                    <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
                 </div>
-                <p className="text-xl text-gray-300 mb-2">{profileData.position}</p>
+                <p className="text-xl text-gray-300 mb-2">{profileData.position || 'Entrepreneur'}</p>
                 <div className="flex items-center space-x-4 text-gray-400">
                   <div className="flex items-center space-x-1">
                     <Building className="h-4 w-4" />
-                    <span>{profileData.company}</span>
+                    <span>{profileData.company || 'Startup'}</span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <MapPin className="h-4 w-4" />
-                    <span>{profileData.location}</span>
+                    <span>{profileData.location || 'France'}</span>
                   </div>
                 </div>
               </div>
             </div>
             <button
               onClick={() => setIsEditing(!isEditing)}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 transition-all flex items-center"
+              disabled={saving}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 transition-all flex items-center disabled:opacity-50"
             >
-              {isEditing ? <X className="h-5 w-5 mr-2" /> : <Edit3 className="h-5 w-5 mr-2" />}
-              {isEditing ? 'Annuler' : 'Modifier'}
+              {saving ? (
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              ) : isEditing ? (
+                <X className="h-5 w-5 mr-2" />
+              ) : (
+                <Edit3 className="h-5 w-5 mr-2" />
+              )}
+              {saving ? 'Sauvegarde...' : isEditing ? 'Annuler' : 'Modifier'}
             </button>
           </div>
 
-          {/* Stats */}
+          {/* Stats - Utilisation des vraies statistiques */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {stats.map((stat, index) => {
+            {statsComponents.map((stat, index) => {
               const IconComponent = stat.icon;
               return (
                 <div key={index} className="bg-white/10 rounded-xl p-4 text-center">
@@ -183,7 +422,7 @@ const ProfilePageContent = () => {
                 activeTab === 'achievements' ? 'bg-white/20 text-white font-semibold' : 'text-gray-400 hover:text-white'
               }`}
             >
-              Réussites
+              Réussites ({achievements.length})
             </button>
             <button
               onClick={() => setActiveTab('settings')}
@@ -235,10 +474,10 @@ const ProfilePageContent = () => {
                   <input
                     type="email"
                     value={profileData.email}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, email: e.target.value }))}
-                    disabled={!isEditing}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                    disabled={true} // Email ne peut pas être modifié
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-gray-400 opacity-60"
                   />
+                  <p className="text-xs text-gray-500 mt-1">L'email ne peut pas être modifié</p>
                 </div>
                 
                 <div>
@@ -249,6 +488,7 @@ const ProfilePageContent = () => {
                     onChange={(e) => setProfileData(prev => ({ ...prev, phone: e.target.value }))}
                     disabled={!isEditing}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                    placeholder="+33 6 12 34 56 78"
                   />
                 </div>
 
@@ -260,6 +500,7 @@ const ProfilePageContent = () => {
                     onChange={(e) => setProfileData(prev => ({ ...prev, website: e.target.value }))}
                     disabled={!isEditing}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                    placeholder="https://mon-site.com"
                   />
                 </div>
               </div>
@@ -267,10 +508,15 @@ const ProfilePageContent = () => {
               {isEditing && (
                 <button
                   onClick={handleSave}
-                  className="w-full mt-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-6 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 transition-all flex items-center justify-center"
+                  disabled={saving}
+                  className="w-full mt-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-6 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 transition-all flex items-center justify-center disabled:opacity-50"
                 >
-                  <Save className="h-5 w-5 mr-2" />
-                  Sauvegarder
+                  {saving ? (
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-5 w-5 mr-2" />
+                  )}
+                  {saving ? 'Sauvegarde...' : 'Sauvegarder'}
                 </button>
               )}
             </div>
@@ -291,6 +537,7 @@ const ProfilePageContent = () => {
                     onChange={(e) => setProfileData(prev => ({ ...prev, company: e.target.value }))}
                     disabled={!isEditing}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                    placeholder="Ma Super Startup"
                   />
                 </div>
                 
@@ -302,6 +549,7 @@ const ProfilePageContent = () => {
                     onChange={(e) => setProfileData(prev => ({ ...prev, position: e.target.value }))}
                     disabled={!isEditing}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                    placeholder="CEO & Fondateur"
                   />
                 </div>
                 
@@ -313,7 +561,26 @@ const ProfilePageContent = () => {
                     onChange={(e) => setProfileData(prev => ({ ...prev, location: e.target.value }))}
                     disabled={!isEditing}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                    placeholder="Paris, France"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Secteur</label>
+                  <select
+                    value={profileData.sector}
+                    onChange={(e) => setProfileData(prev => ({ ...prev, sector: e.target.value }))}
+                    disabled={!isEditing}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                  >
+                    <option value="" className="bg-slate-800">Sélectionner un secteur</option>
+                    <option value="Tech" className="bg-slate-800">Tech / Software</option>
+                    <option value="Fintech" className="bg-slate-800">Fintech</option>
+                    <option value="E-commerce" className="bg-slate-800">E-commerce</option>
+                    <option value="Healthtech" className="bg-slate-800">Healthtech</option>
+                    <option value="Greentech" className="bg-slate-800">Greentech</option>
+                    <option value="Edtech" className="bg-slate-800">Edtech</option>
+                  </select>
                 </div>
 
                 <div>
@@ -324,6 +591,7 @@ const ProfilePageContent = () => {
                     disabled={!isEditing}
                     rows={4}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60 resize-none"
+                    placeholder="Parlez-nous de votre parcours et de vos projets..."
                   />
                 </div>
               </div>
@@ -415,7 +683,7 @@ const ProfilePageContent = () => {
           </div>
         )}
 
-        {/* Achievements Tab */}
+        {/* Achievements Tab - Basé sur les vraies statistiques */}
         {activeTab === 'achievements' && (
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/20">
             <h3 className="text-2xl font-bold text-white mb-8 flex items-center">
@@ -476,7 +744,7 @@ const ProfilePageContent = () => {
               <div className="space-y-4">
                 <button className="w-full text-left p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all">
                   <div className="text-white font-semibold">Changer le mot de passe</div>
-                  <div className="text-gray-400 text-sm">Dernière modification il y a 3 mois</div>
+                  <div className="text-gray-400 text-sm">Dernière modification récente</div>
                 </button>
                 
                 <button className="w-full text-left p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all">

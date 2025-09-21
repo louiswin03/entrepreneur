@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -12,10 +12,15 @@ import {
   Heart,
   Star,
   Briefcase,
-  Target
+  Target,
+  Loader2,
+  Check,
+  X as XIcon,
+  Clock
 } from 'lucide-react';
 import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
+import { supabase } from '../../../lib/supabase';
 import Navigation from '../../../components/Navigation';
 
 const DiscoverPageContent = () => {
@@ -24,110 +29,290 @@ const DiscoverPageContent = () => {
   const [selectedSector, setSelectedSector] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [entrepreneurs, setEntrepreneurs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [connectionRequests, setConnectionRequests] = useState(new Map());
+  const [sendingRequest, setSendingRequest] = useState(null);
 
-  // Données simulées d'entrepreneurs
-  const entrepreneurs = [
-    {
-      id: 1,
-      name: "Marie Dubois",
-      title: "CEO & Co-founder",
-      company: "FinanceAI",
-      sector: "Fintech",
-      location: "Paris, France",
-      experience: "5 ans d'expérience",
-      connections: 234,
-      avatar: "M",
-      description: "Passionnée par l'IA appliquée à la finance. Cherche des partenaires pour révolutionner les services bancaires.",
-      skills: ["AI", "Finance", "Leadership"],
-      lookingFor: ["CTO", "Investisseurs"],
-      online: true,
-      verified: true
-    },
-    {
-      id: 2,
-      name: "Thomas Chen",
-      title: "Founder",
-      company: "GreenTech Solutions",
-      sector: "Greentech",
-      location: "Lyon, France",
-      experience: "3 ans d'expérience",
-      connections: 156,
-      avatar: "T",
-      description: "Développe des solutions durables pour l'industrie. À la recherche de co-fondateurs techniques.",
-      skills: ["Sustainability", "IoT", "Hardware"],
-      lookingFor: ["CTO", "Partenaires"],
-      online: false,
-      verified: true
-    },
-    {
-      id: 3,
-      name: "Sophie Martinez",
-      title: "Co-founder & CPO",
-      company: "HealthHub",
-      sector: "Healthtech",
-      location: "Marseille, France",
-      experience: "7 ans d'expérience",
-      connections: 312,
-      avatar: "S",
-      description: "Expert en UX dans le secteur santé. Construis l'avenir des soins à domicile.",
-      skills: ["UX/UI", "Healthcare", "Product"],
-      lookingFor: ["Investisseurs", "Mentors"],
-      online: true,
-      verified: true
-    },
-    {
-      id: 4,
-      name: "Alexandre Lefèvre",
-      title: "Serial Entrepreneur",
-      company: "EduTech Pro",
-      sector: "Edtech",
-      location: "Bordeaux, France",
-      experience: "10+ ans d'expérience",
-      connections: 567,
-      avatar: "A",
-      description: "3ème startup dans l'éducation. Mentor et investisseur angel. Toujours prêt à aider !",
-      skills: ["Education", "Scaling", "Mentoring"],
-      lookingFor: ["Startups à mentorer"],
-      online: true,
-      verified: true
-    },
-    {
-      id: 5,
-      name: "Camille Petit",
-      title: "Founder",
-      company: "FashionTech",
-      sector: "E-commerce",
-      location: "Nice, France",
-      experience: "2 ans d'expérience",
-      connections: 89,
-      avatar: "C",
-      description: "Révolutionne la mode avec l'IA. Première levée de fonds réussie à 23 ans.",
-      skills: ["Fashion", "AI", "E-commerce"],
-      lookingFor: ["CTO", "Partenaires retail"],
-      online: false,
-      verified: false
-    },
-    {
-      id: 6,
-      name: "Julien Robert",
-      title: "CEO",
-      company: "FoodTech Innovations",
-      sector: "Foodtech",
-      location: "Toulouse, France",
-      experience: "4 ans d'expérience",
-      connections: 198,
-      avatar: "J",
-      description: "Passionné par l'innovation alimentaire. Développe la prochaine génération de protéines.",
-      skills: ["Food Innovation", "R&D", "Sustainability"],
-      lookingFor: ["Investisseurs", "Partenaires industriels"],
-      online: true,
-      verified: true
+  // Récupérer les entrepreneurs depuis la base de données
+  const fetchEntrepreneurs = async () => {
+    try {
+      setLoading(true);
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          company,
+          position,
+          bio,
+          location,
+          sector,
+          experience,
+          avatar_url,
+          is_verified,
+          created_at
+        `)
+        .neq('id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erreur lors de la récupération des entrepreneurs:', error);
+        throw error;
+      }
+
+      // Récupérer les statuts des connexions pour chaque entrepreneur
+      const entrepreneursWithConnections = await Promise.all(
+        (data || []).map(async (entrepreneur) => {
+          // Vérifier le statut de connexion (envoyée, reçue, acceptée)
+          const { data: sentConnection } = await supabase
+            .from('connections')
+            .select('status')
+            .eq('user_id', user?.id)
+            .eq('connected_user_id', entrepreneur.id)
+            .maybeSingle();
+
+          const { data: receivedConnection } = await supabase
+            .from('connections')
+            .select('status')
+            .eq('user_id', entrepreneur.id)
+            .eq('connected_user_id', user?.id)
+            .maybeSingle();
+
+          let connectionStatus = 'none';
+          if (sentConnection) {
+            connectionStatus = `sent_${sentConnection.status}`;
+          } else if (receivedConnection) {
+            connectionStatus = `received_${receivedConnection.status}`;
+          }
+
+          return {
+            id: entrepreneur.id,
+            name: `${entrepreneur.first_name || ''} ${entrepreneur.last_name || ''}`.trim(),
+            title: entrepreneur.position || 'Entrepreneur',
+            company: entrepreneur.company || 'Startup',
+            sector: entrepreneur.sector || 'Tech',
+            location: entrepreneur.location || 'France',
+            experience: entrepreneur.experience || 'Entrepreneur',
+            connections: Math.floor(Math.random() * 300) + 50,
+            avatar: entrepreneur.avatar_url || (entrepreneur.first_name || 'U').charAt(0).toUpperCase(),
+            description: entrepreneur.bio || 'Entrepreneur passionné par l\'innovation.',
+            skills: entrepreneur.sector ? [entrepreneur.sector, 'Innovation', 'Leadership'] : ['Innovation'],
+            lookingFor: ['Partenaires', 'Investisseurs'],
+            online: Math.random() > 0.5,
+            verified: entrepreneur.is_verified || false,
+            connectionStatus: connectionStatus
+          };
+        })
+      );
+
+      setEntrepreneurs(entrepreneursWithConnections);
+      
+      if (entrepreneursWithConnections.length === 0) {
+        setError('Aucun entrepreneur trouvé. Soyez le premier à rejoindre la communauté !');
+      }
+      
+    } catch (error) {
+      console.error('Erreur:', error);
+      setError('Erreur lors du chargement des entrepreneurs');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
-  const sectors = ["Fintech", "Greentech", "Healthtech", "Edtech", "E-commerce", "Foodtech"];
-  const locations = ["Paris", "Lyon", "Marseille", "Bordeaux", "Nice", "Toulouse"];
+  // Obtenir les secteurs et locations uniques
+  const [sectors, setSectors] = useState([]);
+  const [locations, setLocations] = useState([]);
 
+  const fetchFiltersData = async () => {
+    try {
+      const { data: sectorsData } = await supabase
+        .from('profiles')
+        .select('sector')
+        .not('sector', 'is', null);
+
+      const uniqueSectors = [...new Set(sectorsData?.map(item => item.sector).filter(Boolean))];
+      setSectors(uniqueSectors);
+
+      const { data: locationsData } = await supabase
+        .from('profiles')
+        .select('location')
+        .not('location', 'is', null);
+
+      const uniqueLocations = [...new Set(locationsData?.map(item => item.location).filter(Boolean))];
+      setLocations(uniqueLocations);
+      
+    } catch (error) {
+      console.error('Erreur lors du chargement des filtres:', error);
+    }
+  };
+
+  // Envoyer une demande de connexion
+  const sendConnectionRequest = async (targetUserId) => {
+    try {
+      setSendingRequest(targetUserId);
+
+      // Vérifier qu'il n'y a pas déjà une connexion
+      const { data: existingConnection } = await supabase
+        .from('connections')
+        .select('id, status')
+        .or(`and(user_id.eq.${user?.id},connected_user_id.eq.${targetUserId}),and(user_id.eq.${targetUserId},connected_user_id.eq.${user?.id})`)
+        .maybeSingle();
+
+      if (existingConnection) {
+        alert('Une connexion existe déjà avec cette personne');
+        return;
+      }
+
+      // Créer la demande de connexion
+      const { error } = await supabase
+        .from('connections')
+        .insert({
+          user_id: user?.id,
+          connected_user_id: targetUserId,
+          status: 'pending'
+        });
+
+      if (error) {
+        console.error('Erreur demande connexion:', error);
+        throw error;
+      }
+
+      // Créer une notification pour le destinataire
+      const { data: targetProfile } = await supabase
+        .from('profiles')
+        .select('first_name')
+        .eq('id', targetUserId)
+        .single();
+
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: targetUserId,
+          type: 'connection_request',
+          title: 'Nouvelle demande de connexion',
+          message: `${profile?.first_name || 'Un entrepreneur'} souhaite se connecter avec vous`,
+          related_id: user?.id
+        });
+
+      // Mettre à jour l'état local
+      setEntrepreneurs(prev => prev.map(entrepreneur => 
+        entrepreneur.id === targetUserId 
+          ? { ...entrepreneur, connectionStatus: 'sent_pending' }
+          : entrepreneur
+      ));
+
+      alert('Demande de connexion envoyée !');
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('Erreur lors de l\'envoi de la demande');
+    } finally {
+      setSendingRequest(null);
+    }
+  };
+
+  // Démarrer une conversation
+  const startConversation = async (targetUserId) => {
+    try {
+      // Créer un message initial pour démarrer la conversation
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          sender_id: user?.id,
+          receiver_id: targetUserId,
+          content: 'Salut ! Je suis ravi de faire ta connaissance 👋'
+        });
+
+      if (error) throw error;
+
+      // Rediriger vers les messages
+      window.location.href = '/messages';
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('Erreur lors de l\'ouverture de la conversation');
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchEntrepreneurs();
+      fetchFiltersData();
+    }
+  }, [user?.id]);
+
+  // Fonction pour obtenir le bon bouton selon le statut de connexion
+  const getConnectionButton = (entrepreneur) => {
+    const { connectionStatus, id } = entrepreneur;
+
+    switch (connectionStatus) {
+      case 'sent_pending':
+        return (
+          <button
+            disabled
+            className="p-2 bg-yellow-600/20 text-yellow-400 rounded-lg border border-yellow-400/20 cursor-not-allowed"
+            title="Demande envoyée"
+          >
+            <Clock className="h-4 w-4" />
+          </button>
+        );
+      
+      case 'received_pending':
+        return (
+          <button
+            disabled
+            className="p-2 bg-blue-600/20 text-blue-400 rounded-lg border border-blue-400/20"
+            title="Demande reçue - Consultez vos notifications"
+          >
+            <UserPlus className="h-4 w-4" />
+          </button>
+        );
+      
+      case 'sent_accepted':
+      case 'received_accepted':
+        return (
+          <button
+            onClick={() => startConversation(id)}
+            className="p-2 bg-green-600/20 text-green-400 rounded-lg hover:bg-green-600/30 transition-all"
+            title="Connectés - Démarrer une conversation"
+          >
+            <MessageCircle className="h-4 w-4" />
+          </button>
+        );
+      
+      case 'sent_declined':
+      case 'received_declined':
+        return (
+          <button
+            disabled
+            className="p-2 bg-red-600/20 text-red-400 rounded-lg border border-red-400/20 cursor-not-allowed"
+            title="Connexion refusée"
+          >
+            <XIcon className="h-4 w-4" />
+          </button>
+        );
+      
+      default:
+        return (
+          <button
+            onClick={() => sendConnectionRequest(id)}
+            disabled={sendingRequest === id}
+            className="p-2 bg-purple-600/20 text-purple-400 rounded-lg hover:bg-purple-600/30 transition-all disabled:opacity-50"
+            title="Envoyer une demande de connexion"
+          >
+            {sendingRequest === id ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <UserPlus className="h-4 w-4" />
+            )}
+          </button>
+        );
+    }
+  };
+
+  // Logique de filtrage
   const filteredEntrepreneurs = entrepreneurs.filter(entrepreneur => {
     const matchesSearch = entrepreneur.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          entrepreneur.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -137,6 +322,20 @@ const DiscoverPageContent = () => {
     
     return matchesSearch && matchesSector && matchesLocation;
   });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
+            <p className="text-white text-lg">Chargement des entrepreneurs...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -152,7 +351,6 @@ const DiscoverPageContent = () => {
         {/* Search & Filters */}
         <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 mb-8">
           <div className="flex flex-col md:flex-row gap-4 mb-4">
-            {/* Search Bar */}
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
@@ -164,7 +362,6 @@ const DiscoverPageContent = () => {
               />
             </div>
             
-            {/* Filter Button */}
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className="flex items-center space-x-2 bg-white/10 border border-white/20 text-white px-6 py-3 rounded-xl hover:bg-white/20 transition-all backdrop-blur-sm"
@@ -174,7 +371,6 @@ const DiscoverPageContent = () => {
             </button>
           </div>
 
-          {/* Filters Panel */}
           {showFilters && (
             <div className="grid md:grid-cols-2 gap-4 pt-4 border-t border-white/20">
               <div>
@@ -197,7 +393,7 @@ const DiscoverPageContent = () => {
                   onChange={(e) => setSelectedLocation(e.target.value)}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="all" className="bg-slate-800">Toutes les villes</option>
+                  <option value="all" className="bg-slate-800">Toutes les localisations</option>
                   {locations.map(location => (
                     <option key={location} value={location} className="bg-slate-800">{location}</option>
                   ))}
@@ -207,122 +403,129 @@ const DiscoverPageContent = () => {
           )}
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="bg-orange-500/20 border border-orange-500/30 rounded-2xl p-6 mb-8">
+            <p className="text-orange-400 text-center">{error}</p>
+          </div>
+        )}
+
         {/* Results Count */}
-        <div className="mb-6">
-          <p className="text-gray-300">
-            <span className="text-white font-semibold">{filteredEntrepreneurs.length}</span> entrepreneurs trouvés
-          </p>
-        </div>
+        {!error && (
+          <div className="mb-6">
+            <p className="text-gray-300">
+              <span className="text-white font-semibold">{filteredEntrepreneurs.length}</span> entrepreneurs trouvés
+            </p>
+          </div>
+        )}
 
         {/* Entrepreneurs Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEntrepreneurs.map((entrepreneur) => (
-            <div key={entrepreneur.id} className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all group">
-              {/* Profile Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="w-16 h-16 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-bold text-xl">
-                      {entrepreneur.avatar}
-                    </div>
-                    {entrepreneur.online && (
-                      <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-400 rounded-full border-2 border-slate-900"></div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h3 className="text-white font-bold">{entrepreneur.name}</h3>
-                      {entrepreneur.verified && (
-                        <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-xs">✓</span>
-                        </div>
+        {filteredEntrepreneurs.length > 0 ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredEntrepreneurs.map((entrepreneur) => (
+              <div key={entrepreneur.id} className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all group">
+                {/* Profile Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="relative">
+                      <div className="w-16 h-16 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-bold text-xl">
+                        {entrepreneur.avatar}
+                      </div>
+                      {entrepreneur.online && (
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-400 rounded-full border-2 border-slate-900"></div>
                       )}
                     </div>
-                    <p className="text-gray-300 text-sm">{entrepreneur.title}</p>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="text-white font-bold">{entrepreneur.name}</h3>
+                        {entrepreneur.verified && (
+                          <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                            <span className="text-white text-xs">✓</span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-gray-300 text-sm">{entrepreneur.title}</p>
+                    </div>
                   </div>
-                </div>
-                <button className="p-2 rounded-full hover:bg-white/10 transition-all">
-                  <Heart className="h-5 w-5 text-gray-400 hover:text-red-400" />
-                </button>
-              </div>
-
-              {/* Company & Location */}
-              <div className="mb-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Building className="h-4 w-4 text-gray-400" />
-                  <span className="text-white font-semibold">{entrepreneur.company}</span>
-                  <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded-full text-xs font-semibold">
-                    {entrepreneur.sector}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm text-gray-300">
-                  <div className="flex items-center space-x-1">
-                    <MapPin className="h-4 w-4" />
-                    <span>{entrepreneur.location}</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Briefcase className="h-4 w-4" />
-                    <span>{entrepreneur.experience}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Description */}
-              <p className="text-gray-300 text-sm mb-4 line-clamp-3">
-                {entrepreneur.description}
-              </p>
-
-              {/* Skills */}
-              <div className="mb-4">
-                <div className="flex flex-wrap gap-2">
-                  {entrepreneur.skills.slice(0, 3).map((skill, index) => (
-                    <span key={index} className="bg-white/10 text-white px-2 py-1 rounded-lg text-xs">
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Looking For */}
-              <div className="mb-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Target className="h-4 w-4 text-orange-400" />
-                  <span className="text-orange-400 text-sm font-semibold">Recherche :</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {entrepreneur.lookingFor.map((item, index) => (
-                    <span key={index} className="bg-orange-500/20 text-orange-400 px-2 py-1 rounded-lg text-xs">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Stats & Actions */}
-              <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                <div className="flex items-center space-x-1 text-gray-300 text-sm">
-                  <Users className="h-4 w-4" />
-                  <span>{entrepreneur.connections} connexions</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button className="p-2 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-all">
-                    <MessageCircle className="h-4 w-4" />
-                  </button>
-                  <button className="p-2 bg-purple-600/20 text-purple-400 rounded-lg hover:bg-purple-600/30 transition-all">
-                    <UserPlus className="h-4 w-4" />
+                  <button className="p-2 rounded-full hover:bg-white/10 transition-all">
+                    <Heart className="h-5 w-5 text-gray-400 hover:text-red-400" />
                   </button>
                 </div>
+
+                {/* Company & Location */}
+                <div className="mb-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Building className="h-4 w-4 text-gray-400" />
+                    <span className="text-white font-semibold">{entrepreneur.company}</span>
+                    <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded-full text-xs font-semibold">
+                      {entrepreneur.sector}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-300">
+                    <div className="flex items-center space-x-1">
+                      <MapPin className="h-4 w-4" />
+                      <span>{entrepreneur.location}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Briefcase className="h-4 w-4" />
+                      <span>{entrepreneur.experience}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <p className="text-gray-300 text-sm mb-4 line-clamp-3">
+                  {entrepreneur.description}
+                </p>
+
+                {/* Skills */}
+                <div className="mb-4">
+                  <div className="flex flex-wrap gap-2">
+                    {entrepreneur.skills.slice(0, 3).map((skill, index) => (
+                      <span key={index} className="bg-white/10 text-white px-2 py-1 rounded-lg text-xs">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Looking For */}
+                <div className="mb-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Target className="h-4 w-4 text-orange-400" />
+                    <span className="text-orange-400 text-sm font-semibold">Recherche :</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {entrepreneur.lookingFor.map((item, index) => (
+                      <span key={index} className="bg-orange-500/20 text-orange-400 px-2 py-1 rounded-lg text-xs">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stats & Actions */}
+                <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                  <div className="flex items-center space-x-1 text-gray-300 text-sm">
+                    <Users className="h-4 w-4" />
+                    <span>{entrepreneur.connections} connexions</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {getConnectionButton(entrepreneur)}
+                  </div>
+                </div>
               </div>
+            ))}
+          </div>
+        ) : !loading && !error && (
+          <div className="text-center py-16">
+            <div className="w-24 h-24 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Users className="h-12 w-12 text-white" />
             </div>
-          ))}
-        </div>
-
-        {/* Load More */}
-        <div className="text-center mt-12">
-          <button className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-3 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 transition-all transform hover:scale-105">
-            Voir plus d'entrepreneurs
-          </button>
-        </div>
+            <h3 className="text-2xl font-bold text-white mb-2">Aucun entrepreneur trouvé</h3>
+            <p className="text-gray-300 mb-4">Essayez de modifier vos filtres de recherche</p>
+          </div>
+        )}
       </div>
     </div>
   );

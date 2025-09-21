@@ -14,7 +14,9 @@ import {
   Plus,
   UserPlus,
   Target,
-  Star
+  Star,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -28,17 +30,119 @@ const DashboardContent = () => {
     connections: 0,
     messages: 0,
     events: 0,
-    profileViews: 0
+    profileViews: 0,
+    connectionsChange: 0,
+    messagesChange: 0,
+    eventsChange: 0,
+    viewsChange: 0
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Fonction pour récupérer les connexions
+  // Fonction pour récupérer les statistiques RÉELLES
+  const fetchStats = async () => {
+    try {
+      // Connexions acceptées
+      const { count: connectionsCount } = await supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user?.id)
+        .eq('status', 'accepted');
+
+      // Messages REÇUS par l'utilisateur
+      const { count: messagesReceivedCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', user?.id);
+
+      // Messages ENVOYÉS par l'utilisateur  
+      const { count: messagesSentCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('sender_id', user?.id);
+
+      const totalMessages = (messagesReceivedCount || 0) + (messagesSentCount || 0);
+
+      // Événements où l'utilisateur est inscrit
+      const { count: eventsCount } = await supabase
+        .from('event_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user?.id)
+        .in('status', ['registered', 'confirmed', 'attended']);
+
+      // Vues du profil
+      const { count: profileViewsCount } = await supabase
+        .from('profile_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_user_id', user?.id);
+
+      // Calcul des changements (comparaison avec la semaine dernière)
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+      // Nouvelles connexions cette semaine
+      const { count: newConnectionsThisWeek } = await supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user?.id)
+        .eq('status', 'accepted')
+        .gte('updated_at', oneWeekAgo.toISOString());
+
+      // Nouveaux messages cette semaine
+      const { count: newMessagesThisWeek } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .or(`receiver_id.eq.${user?.id},sender_id.eq.${user?.id}`)
+        .gte('created_at', oneWeekAgo.toISOString());
+
+      // Nouveaux événements cette semaine
+      const { count: newEventsThisWeek } = await supabase
+        .from('event_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user?.id)
+        .gte('registration_date', oneWeekAgo.toISOString());
+
+      // Nouvelles vues cette semaine
+      const { count: newViewsThisWeek } = await supabase
+        .from('profile_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_user_id', user?.id)
+        .gte('viewed_at', oneWeekAgo.toISOString());
+
+      setStats({
+        connections: connectionsCount || 0,
+        messages: totalMessages,
+        events: eventsCount || 0,
+        profileViews: profileViewsCount || 0,
+        connectionsChange: newConnectionsThisWeek || 0,
+        messagesChange: newMessagesThisWeek || 0,
+        eventsChange: newEventsThisWeek || 0,
+        viewsChange: newViewsThisWeek || 0
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la récupération des statistiques:', error);
+      setStats({
+        connections: 0,
+        messages: 0,
+        events: 0,
+        profileViews: 0,
+        connectionsChange: 0,
+        messagesChange: 0,
+        eventsChange: 0,
+        viewsChange: 0
+      });
+    }
+  };
+
+  // Fonction pour récupérer les connexions RÉELLES
   const fetchConnections = async () => {
     try {
       const { data, error } = await supabase
         .from('connections')
         .select(`
           id,
+          created_at,
           connected_user:profiles!connections_connected_user_id_fkey(
             id,
             first_name,
@@ -50,20 +154,20 @@ const DashboardContent = () => {
         .eq('user_id', user?.id)
         .eq('status', 'accepted')
         .order('created_at', { ascending: false })
-        .limit(3);
+        .limit(5);
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Erreur connexions:', error);
         throw error;
       }
 
       const formattedConnections = data?.map(conn => ({
         id: conn.id,
-        name: `${conn.connected_user.first_name || ''} ${conn.connected_user.last_name || ''}`.trim(),
+        name: `${conn.connected_user.first_name || ''} ${conn.connected_user.last_name || ''}`.trim() || 'Utilisateur',
         company: conn.connected_user.company || 'Entrepreneur',
         sector: conn.connected_user.position || 'Entrepreneur',
         avatar: (conn.connected_user.first_name || 'U').charAt(0).toUpperCase(),
-        status: 'online'
+        status: Math.random() > 0.5 ? 'online' : 'offline' // TODO: Système de présence réel
       })) || [];
 
       setConnections(formattedConnections);
@@ -73,7 +177,7 @@ const DashboardContent = () => {
     }
   };
 
-  // Fonction pour récupérer les messages récents
+  // Fonction pour récupérer les messages récents RÉELS
   const fetchRecentMessages = async () => {
     try {
       const { data, error } = await supabase
@@ -83,6 +187,7 @@ const DashboardContent = () => {
           content,
           created_at,
           is_read,
+          sender_id,
           sender:profiles!messages_sender_id_fkey(
             first_name,
             last_name
@@ -90,10 +195,10 @@ const DashboardContent = () => {
         `)
         .eq('receiver_id', user?.id)
         .order('created_at', { ascending: false })
-        .limit(3);
+        .limit(5);
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Erreur messages:', error);
         throw error;
       }
 
@@ -112,81 +217,71 @@ const DashboardContent = () => {
     }
   };
 
-  // Fonction pour récupérer les événements à venir
+  // Fonction pour récupérer les événements à venir RÉELS
   const fetchUpcomingEvents = async () => {
     try {
-      const { data, error } = await supabase
-        .from('events')
+      // D'abord, récupérer les événements où l'utilisateur est inscrit
+      const { data: participations, error: participError } = await supabase
+        .from('event_participants')
         .select(`
-          id,
-          title,
-          date,
-          time,
-          participants_count
+          event_id,
+          status,
+          events:event_id (
+            id,
+            title,
+            start_date,
+            start_time,
+            location,
+            max_participants
+          )
         `)
-        .gte('date', new Date().toISOString().split('T')[0])
-        .order('date', { ascending: true })
-        .limit(3);
+        .eq('user_id', user?.id)
+        .in('status', ['registered', 'confirmed']);
 
-      if (error) throw error;
+      if (participError) {
+        console.error('Erreur participations:', participError);
+        throw participError;
+      }
 
-      const formattedEvents = data?.map(event => ({
-        id: event.id,
-        title: event.title,
-        date: formatDate(new Date(event.date)),
-        time: event.time || '00:00',
-        attendees: event.participants_count || 0
-      })) || [];
+      // Filtrer les événements futurs
+      const today = new Date().toISOString().split('T')[0];
+      const futureEvents = participations?.filter(p => 
+        p.events && p.events.start_date >= today
+      ) || [];
 
-      setUpcomingEvents(formattedEvents);
+      // Pour chaque événement, compter le nombre de participants
+      const eventsWithCounts = await Promise.all(
+        futureEvents.map(async (participation) => {
+          const { count } = await supabase
+            .from('event_participants')
+            .select('*', { count: 'exact', head: true })
+            .eq('event_id', participation.event_id)
+            .in('status', ['registered', 'confirmed', 'attended']);
+
+          return {
+            id: participation.events.id,
+            title: participation.events.title,
+            date: formatDate(new Date(participation.events.start_date)),
+            time: participation.events.start_time || '00:00',
+            location: participation.events.location || 'À définir',
+            attendees: count || 0,
+            maxAttendees: participation.events.max_participants,
+            status: participation.status
+          };
+        })
+      );
+
+      // Trier par date
+      eventsWithCounts.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      setUpcomingEvents(eventsWithCounts.slice(0, 3));
     } catch (error) {
       console.error('Erreur lors de la récupération des événements:', error);
       setUpcomingEvents([]);
     }
   };
 
-  // Fonction pour récupérer les statistiques
-  const fetchStats = async () => {
-    try {
-      const { count: connectionsCount } = await supabase
-        .from('connections')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user?.id)
-        .eq('status', 'accepted');
-
-      const { count: messagesCount } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user?.id);
-
-      const { count: eventsCount } = await supabase
-        .from('event_participants')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user?.id);
-
-      const { count: profileViewsCount } = await supabase
-        .from('profile_views')
-        .select('*', { count: 'exact', head: true })
-        .eq('profile_user_id', user?.id);
-
-      setStats({
-        connections: connectionsCount || 0,
-        messages: messagesCount || 0,
-        events: eventsCount || 0,
-        profileViews: profileViewsCount || 0
-      });
-    } catch (error) {
-      console.error('Erreur lors de la récupération des statistiques:', error);
-      setStats({
-        connections: 0,
-        messages: 0,
-        events: 0,
-        profileViews: 0
-      });
-    }
-  };
-
-  // Fonction pour récupérer le nombre de notifications non lues
+  // Fonction pour récupérer les notifications non lues RÉELLES
   const fetchNotifications = async () => {
     try {
       const { count } = await supabase
@@ -234,14 +329,20 @@ const DashboardContent = () => {
     const loadDashboardData = async () => {
       if (user?.id) {
         setLoading(true);
-        await Promise.all([
-          fetchConnections(),
-          fetchRecentMessages(),
-          fetchUpcomingEvents(),
-          fetchStats(),
-          fetchNotifications()
-        ]);
-        setLoading(false);
+        try {
+          await Promise.all([
+            fetchStats(),
+            fetchConnections(),
+            fetchRecentMessages(),
+            fetchUpcomingEvents(),
+            fetchNotifications()
+          ]);
+        } catch (error) {
+          console.error('Erreur lors du chargement du dashboard:', error);
+          setError('Erreur lors du chargement des données');
+        } finally {
+          setLoading(false);
+        }
       }
     };
 
@@ -253,33 +354,59 @@ const DashboardContent = () => {
     { 
       label: "Connexions", 
       value: stats.connections.toString(), 
-      change: "+12", 
+      change: stats.connectionsChange > 0 ? `+${stats.connectionsChange}` : stats.connectionsChange.toString(), 
       color: "text-purple-400" 
     },
     { 
       label: "Messages", 
       value: stats.messages.toString(), 
-      change: "+5", 
+      change: stats.messagesChange > 0 ? `+${stats.messagesChange}` : stats.messagesChange.toString(), 
       color: "text-blue-400" 
     },
     { 
       label: "Événements", 
       value: stats.events.toString(), 
-      change: "+2", 
+      change: stats.eventsChange > 0 ? `+${stats.eventsChange}` : stats.eventsChange.toString(), 
       color: "text-green-400" 
     },
     { 
       label: "Profil vu", 
       value: stats.profileViews.toString(), 
-      change: "+18", 
+      change: stats.viewsChange > 0 ? `+${stats.viewsChange}` : stats.viewsChange.toString(), 
       color: "text-orange-400" 
     }
   ];
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-2xl">Chargement...</div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 text-purple-400 animate-spin mx-auto mb-4" />
+            <p className="text-white text-lg">Chargement de votre dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <Navigation />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+            <p className="text-red-400 text-lg mb-4">{error}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 transition-all"
+            >
+              Réessayer
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -330,7 +457,12 @@ const DashboardContent = () => {
             <div key={index} className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-gray-300 text-sm font-medium">{stat.label}</h3>
-                <span className="text-green-400 text-sm font-semibold">{stat.change}</span>
+                <span className={`text-sm font-semibold ${
+                  parseInt(stat.change) > 0 ? 'text-green-400' : 
+                  parseInt(stat.change) < 0 ? 'text-red-400' : 'text-gray-400'
+                }`}>
+                  {stat.change}
+                </span>
               </div>
               <p className={`text-3xl font-bold ${stat.color}`}>{stat.value}</p>
             </div>
@@ -365,13 +497,18 @@ const DashboardContent = () => {
                 </div>
               )) : (
                 <div className="text-center text-gray-400 py-4">
-                  Aucune connexion pour le moment
+                  <p>Aucune connexion pour le moment</p>
+                  <Link href="/discover" className="text-purple-400 hover:text-purple-300 transition-colors text-sm">
+                    Découvrir des entrepreneurs →
+                  </Link>
                 </div>
               )}
             </div>
-            <Link href="/discover" className="block text-center text-purple-400 hover:text-purple-300 transition-colors mt-4 font-semibold">
-              Voir toutes les connexions
-            </Link>
+            {connections.length > 0 && (
+              <Link href="/discover" className="block text-center text-purple-400 hover:text-purple-300 transition-colors mt-4 font-semibold">
+                Voir toutes les connexions
+              </Link>
+            )}
           </div>
 
           {/* Messages récents */}
@@ -401,13 +538,18 @@ const DashboardContent = () => {
                 </div>
               )) : (
                 <div className="text-center text-gray-400 py-4">
-                  Aucun message pour le moment
+                  <p>Aucun message pour le moment</p>
+                  <Link href="/discover" className="text-blue-400 hover:text-blue-300 transition-colors text-sm">
+                    Commencer une conversation →
+                  </Link>
                 </div>
               )}
             </div>
-            <Link href="/messages" className="block text-center text-blue-400 hover:text-blue-300 transition-colors mt-4 font-semibold">
-              Voir tous les messages
-            </Link>
+            {recentMessages.length > 0 && (
+              <Link href="/messages" className="block text-center text-blue-400 hover:text-blue-300 transition-colors mt-4 font-semibold">
+                Voir tous les messages
+              </Link>
+            )}
           </div>
 
           {/* Événements à venir */}
@@ -432,16 +574,28 @@ const DashboardContent = () => {
                     <div className="text-gray-400 text-sm">{event.time}</div>
                     <div className="text-gray-400 text-xs">{event.attendees} participants</div>
                   </div>
+                  <div className="mt-1">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      event.status === 'confirmed' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {event.status === 'confirmed' ? 'Confirmé' : 'Inscrit'}
+                    </span>
+                  </div>
                 </div>
               )) : (
                 <div className="text-center text-gray-400 py-4">
-                  Aucun événement à venir
+                  <p>Aucun événement à venir</p>
+                  <Link href="/events" className="text-green-400 hover:text-green-300 transition-colors text-sm">
+                    Découvrir des événements →
+                  </Link>
                 </div>
               )}
             </div>
-            <Link href="/events" className="block text-center text-green-400 hover:text-green-300 transition-colors mt-4 font-semibold">
-              Voir tous les événements
-            </Link>
+            {upcomingEvents.length > 0 && (
+              <Link href="/events" className="block text-center text-green-400 hover:text-green-300 transition-colors mt-4 font-semibold">
+                Voir tous les événements
+              </Link>
+            )}
           </div>
         </div>
 
@@ -458,7 +612,7 @@ const DashboardContent = () => {
                   <Star className="h-5 w-5 text-yellow-400 mr-2" />
                   <span className="text-white font-semibold">Entrepreneurs similaires</span>
                 </div>
-                <p className="text-gray-300 text-sm mb-3">3 nouveaux entrepreneurs dans ton secteur ont rejoint la plateforme</p>
+                <p className="text-gray-300 text-sm mb-3">Découvrez des entrepreneurs dans votre secteur</p>
                 <Link href="/discover" className="text-purple-400 hover:text-purple-300 transition-colors text-sm font-semibold">
                   Découvrir →
                 </Link>
@@ -466,11 +620,11 @@ const DashboardContent = () => {
               <div className="bg-white/10 rounded-xl p-4 border border-white/20">
                 <div className="flex items-center mb-3">
                   <Calendar className="h-5 w-5 text-green-400 mr-2" />
-                  <span className="text-white font-semibold">Événement suggéré</span>
+                  <span className="text-white font-semibold">Événements suggérés</span>
                 </div>
-                <p className="text-gray-300 text-sm mb-3">"AI & Future of Work" - Parfait pour ton secteur d'activité</p>
+                <p className="text-gray-300 text-sm mb-3">Participez aux événements de votre communauté</p>
                 <Link href="/events" className="text-green-400 hover:text-green-300 transition-colors text-sm font-semibold">
-                  S'inscrire →
+                  Explorer →
                 </Link>
               </div>
               <div className="bg-white/10 rounded-xl p-4 border border-white/20">
@@ -478,7 +632,7 @@ const DashboardContent = () => {
                   <TrendingUp className="h-5 w-5 text-orange-400 mr-2" />
                   <span className="text-white font-semibold">Profil optimisé</span>
                 </div>
-                <p className="text-gray-300 text-sm mb-3">Compléter ton profil augmentera ta visibilité de 40%</p>
+                <p className="text-gray-300 text-sm mb-3">Complétez votre profil pour plus de visibilité</p>
                 <Link href="/profile" className="text-orange-400 hover:text-orange-300 transition-colors text-sm font-semibold">
                   Compléter →
                 </Link>
