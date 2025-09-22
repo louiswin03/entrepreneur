@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   Search, 
   Filter, 
@@ -22,6 +23,7 @@ import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import Navigation from '../../../components/Navigation';
+import { calculateDistance, formatDistance } from '../../../lib/geoUtils';
 
 const DiscoverPageContent = () => {
   const { user, profile } = useAuth();
@@ -50,6 +52,9 @@ const DiscoverPageContent = () => {
           position,
           bio,
           location,
+          city,
+          latitude,
+          longitude,
           sector,
           experience,
           avatar_url,
@@ -89,13 +94,28 @@ const DiscoverPageContent = () => {
             connectionStatus = `received_${receivedConnection.status}`;
           }
 
+          // Calculer la distance si les coordonnées sont disponibles
+          let distance = null;
+          let distanceText = '';
+          
+          if (profile?.latitude && profile?.longitude && 
+              entrepreneur.latitude && entrepreneur.longitude) {
+            distance = calculateDistance(
+              profile.latitude, 
+              profile.longitude,
+              entrepreneur.latitude, 
+              entrepreneur.longitude
+            );
+            distanceText = formatDistance(distance);
+          }
+
           return {
             id: entrepreneur.id,
             name: `${entrepreneur.first_name || ''} ${entrepreneur.last_name || ''}`.trim(),
             title: entrepreneur.position || 'Entrepreneur',
             company: entrepreneur.company || 'Startup',
             sector: entrepreneur.sector || 'Tech',
-            location: entrepreneur.location || 'France',
+            location: entrepreneur.city || entrepreneur.location || 'France',
             experience: entrepreneur.experience || 'Entrepreneur',
             connections: Math.floor(Math.random() * 300) + 50,
             avatar: entrepreneur.avatar_url || (entrepreneur.first_name || 'U').charAt(0).toUpperCase(),
@@ -104,10 +124,26 @@ const DiscoverPageContent = () => {
             lookingFor: ['Partenaires', 'Investisseurs'],
             online: Math.random() > 0.5,
             verified: entrepreneur.is_verified || false,
-            connectionStatus: connectionStatus
+            connectionStatus: connectionStatus,
+            distance: distance, // Distance en km
+            distanceText: distanceText, // Distance formatée
+            latitude: entrepreneur.latitude,
+            longitude: entrepreneur.longitude
           };
         })
       );
+
+      // Trier par distance si disponible
+      entrepreneursWithConnections.sort((a, b) => {
+        if (a.distance !== null && b.distance !== null) {
+          return a.distance - b.distance; // Plus proches en premier
+        } else if (a.distance !== null) {
+          return -1; // Les profils avec distance en premier
+        } else if (b.distance !== null) {
+          return 1;
+        }
+        return 0; // Garder l'ordre original
+      });
 
       setEntrepreneurs(entrepreneursWithConnections);
       
@@ -139,10 +175,10 @@ const DiscoverPageContent = () => {
 
       const { data: locationsData } = await supabase
         .from('profiles')
-        .select('location')
-        .not('location', 'is', null);
+        .select('city, location')
+        .not('city', 'is', null);
 
-      const uniqueLocations = [...new Set(locationsData?.map(item => item.location).filter(Boolean))];
+      const uniqueLocations = [...new Set(locationsData?.map(item => item.city || item.location).filter(Boolean))];
       setLocations(uniqueLocations);
       
     } catch (error) {
@@ -345,7 +381,12 @@ const DiscoverPageContent = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">Découvrir des entrepreneurs</h1>
-          <p className="text-gray-300 text-lg">Trouve ton prochain co-fondateur, mentor ou partenaire d'affaires</p>
+          <p className="text-gray-300 text-lg">
+            Trouve ton prochain co-fondateur, mentor ou partenaire d'affaires
+            {profile?.city && (
+              <span className="text-purple-400 ml-2">• Triés par proximité depuis {profile.city}</span>
+            )}
+          </p>
         </div>
 
         {/* Search & Filters */}
@@ -403,6 +444,17 @@ const DiscoverPageContent = () => {
           )}
         </div>
 
+        {/* Location Notice */}
+        {!profile?.city && (
+          <div className="bg-blue-500/20 border border-blue-500/30 rounded-2xl p-4 mb-8 text-center">
+            <MapPin className="h-6 w-6 text-blue-400 mx-auto mb-2" />
+            <p className="text-blue-400 mb-2">Définissez votre ville pour voir les entrepreneurs proches de vous</p>
+            <Link href="/profile" className="text-blue-300 hover:text-blue-200 underline font-semibold">
+              Compléter mon profil →
+            </Link>
+          </div>
+        )}
+
         {/* Error Message */}
         {error && (
           <div className="bg-orange-500/20 border border-orange-500/30 rounded-2xl p-6 mb-8">
@@ -415,6 +467,9 @@ const DiscoverPageContent = () => {
           <div className="mb-6">
             <p className="text-gray-300">
               <span className="text-white font-semibold">{filteredEntrepreneurs.length}</span> entrepreneurs trouvés
+              {profile?.city && filteredEntrepreneurs.some(e => e.distance !== null) && (
+                <span className="text-purple-400 ml-2">• Triés par proximité</span>
+              )}
             </p>
           </div>
         )}
@@ -466,6 +521,13 @@ const DiscoverPageContent = () => {
                       <MapPin className="h-4 w-4" />
                       <span>{entrepreneur.location}</span>
                     </div>
+                    {entrepreneur.distanceText && (
+                      <span className="text-purple-400 font-semibold text-xs bg-purple-500/20 px-2 py-1 rounded-full">
+                        📍 {entrepreneur.distanceText}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-300 mt-1">
                     <div className="flex items-center space-x-1">
                       <Briefcase className="h-4 w-4" />
                       <span>{entrepreneur.experience}</span>
@@ -527,6 +589,27 @@ const DiscoverPageContent = () => {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="bg-black/40 backdrop-blur-md border-t border-white/10 py-12 px-4 mt-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center space-x-2 mb-4 md:mb-0">
+              <span className="text-xl font-bold text-white">EntrepreneurConnect</span>
+            </div>
+            <div className="flex space-x-8 text-gray-400">
+              <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+              <Link href="/discover" className="hover:text-white transition-colors">Découvrir</Link>
+              <Link href="/events" className="hover:text-white transition-colors">Événements</Link>
+              <Link href="/messages" className="hover:text-white transition-colors">Messages</Link>
+              <Link href="/profile" className="hover:text-white transition-colors">Profil</Link>
+            </div>
+          </div>
+          <div className="border-t border-white/10 mt-8 pt-8 text-center">
+            <p className="text-gray-400">&copy; 2025 EntrepreneurConnect. Tous droits réservés.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

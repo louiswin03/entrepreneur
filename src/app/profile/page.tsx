@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   User, 
   Building, 
@@ -30,6 +31,8 @@ import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import Navigation from '../../../components/Navigation';
+import CitySelector from '../../../components/CitySelector';
+import AvatarUpload from '../../../components/AvatarUpload';
 
 const ProfilePageContent = () => {
   const { user, profile } = useAuth();
@@ -52,6 +55,9 @@ const ProfilePageContent = () => {
     company: '',
     position: '',
     location: '',
+    city: '',
+    latitude: null,
+    longitude: null,
     website: '',
     bio: '',
     sector: '',
@@ -129,6 +135,9 @@ const ProfilePageContent = () => {
           company: profile.company || '',
           position: profile.position || '',
           location: profile.location || '',
+          city: profile.city || '',
+          latitude: profile.latitude || null,
+          longitude: profile.longitude || null,
           website: profile.website || '',
           bio: profile.bio || '',
           sector: profile.sector || '',
@@ -159,6 +168,9 @@ const ProfilePageContent = () => {
           position: profileData.position || null,
           bio: profileData.bio || null,
           location: profileData.location || null,
+          city: profileData.city || null,
+          latitude: profileData.latitude || null,
+          longitude: profileData.longitude || null,
           sector: profileData.sector || null,
           experience: profileData.experience || null,
           website: profileData.website || null,
@@ -344,14 +356,21 @@ const ProfilePageContent = () => {
         <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/20 mb-8">
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center space-x-6">
-              <div className="relative">
-                <div className="w-24 h-24 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-3xl">
-                  {(profileData.firstName || 'U').charAt(0).toUpperCase()}
-                </div>
-                <button className="absolute -bottom-2 -right-2 bg-purple-600 text-white p-2 rounded-full hover:bg-purple-700 transition-colors">
-                  <Camera className="h-4 w-4" />
-                </button>
-              </div>
+
+              
+              <AvatarUpload
+                userId={user?.id}
+                currentAvatar={profile?.avatar_url}
+                onAvatarUpdate={(newAvatarUrl) => {
+                  window.location.reload();
+                }}
+                size="large"
+                disabled={!isEditing}
+                showUploadButton={true}
+              />
+
+
+
               <div>
                 <div className="flex items-center space-x-3 mb-2">
                   <h1 className="text-3xl font-bold text-white">{profileData.firstName} {profileData.lastName}</h1>
@@ -369,7 +388,7 @@ const ProfilePageContent = () => {
                   </div>
                   <div className="flex items-center space-x-1">
                     <MapPin className="h-4 w-4" />
-                    <span>{profileData.location || 'France'}</span>
+                    <span>{profileData.city || profileData.location || 'France'}</span>
                   </div>
                 </div>
               </div>
@@ -554,14 +573,19 @@ const ProfilePageContent = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Localisation</label>
-                  <input
-                    type="text"
-                    value={profileData.location}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, location: e.target.value }))}
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Ville</label>
+                  <CitySelector
+                    currentCity={profileData.city}
                     disabled={!isEditing}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
-                    placeholder="Paris, France"
+                    onCityUpdate={({ city, latitude, longitude }) => {
+                      setProfileData(prev => ({
+                        ...prev,
+                        city,
+                        latitude,
+                        longitude,
+                        location: city // Pour compatibilité
+                      }));
+                    }}
                   />
                 </div>
 
@@ -756,6 +780,27 @@ const ProfilePageContent = () => {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="bg-black/40 backdrop-blur-md border-t border-white/10 py-12 px-4 mt-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center space-x-2 mb-4 md:mb-0">
+              <span className="text-xl font-bold text-white">EntrepreneurConnect</span>
+            </div>
+            <div className="flex space-x-8 text-gray-400">
+              <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+              <Link href="/discover" className="hover:text-white transition-colors">Découvrir</Link>
+              <Link href="/events" className="hover:text-white transition-colors">Événements</Link>
+              <Link href="/messages" className="hover:text-white transition-colors">Messages</Link>
+              <Link href="/profile" className="hover:text-white transition-colors">Profil</Link>
+            </div>
+          </div>
+          <div className="border-t border-white/10 mt-8 pt-8 text-center">
+            <p className="text-gray-400">&copy; 2025 EntrepreneurConnect. Tous droits réservés.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

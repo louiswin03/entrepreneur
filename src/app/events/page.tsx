@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   Calendar, 
   MapPin, 
@@ -20,6 +21,7 @@ import { ProtectedRoute } from '../../../lib/ProtectedRoute';
 import { useAuth } from '../../../lib/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import Navigation from '../../../components/Navigation';
+import CoverUpload from '../../../components/CoverUpload';
 
 const EventsPageContent = () => {
   const { user, profile } = useAuth();
@@ -35,7 +37,7 @@ const EventsPageContent = () => {
   const [registering, setRegistering] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  // État pour le formulaire de création d'événement
+
   const [newEvent, setNewEvent] = useState({
     title: '',
     description: '',
@@ -46,7 +48,8 @@ const EventsPageContent = () => {
     location: '',
     category: 'Networking',
     price: 0,
-    max_participants: ''
+    max_participants: '',
+    cover_url: ''
   });
 
   // Récupérer tous les événements depuis la base de données
@@ -371,6 +374,8 @@ const EventsPageContent = () => {
     setCreating(true);
     
     try {
+      
+
       const { data, error } = await supabase
         .from('events')
         .insert({
@@ -384,8 +389,11 @@ const EventsPageContent = () => {
           category: newEvent.category,
           price: newEvent.price || 0,
           max_participants: newEvent.max_participants ? parseInt(newEvent.max_participants) : null,
+          cover_url: newEvent.cover_url || null,
           organizer_id: user.id
         })
+
+
         .select()
         .single();
 
@@ -408,6 +416,8 @@ const EventsPageContent = () => {
       setShowCreateModal(false);
       
       // Reset form
+      
+
       setNewEvent({
         title: '',
         description: '',
@@ -418,7 +428,8 @@ const EventsPageContent = () => {
         location: '',
         category: 'Networking',
         price: 0,
-        max_participants: ''
+        max_participants: '',
+        cover_url: ''
       });
       
       // Recharger les événements
@@ -679,6 +690,21 @@ const EventsPageContent = () => {
                 />
               </div>
 
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Image de couverture (optionnelle)</label>
+                <CoverUpload
+                  userId={user?.id}
+                  eventId={null}
+                  currentCover={newEvent.cover_url}
+                  onCoverUpdate={(coverUrl) => {
+                    setNewEvent(prev => ({ ...prev, cover_url: coverUrl }));
+                  }}
+                  disabled={creating}
+                  className="w-full"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Date de début *</label>
@@ -794,6 +820,28 @@ const EventsPageContent = () => {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="bg-black/40 backdrop-blur-md border-t border-white/10 py-12 px-4 mt-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center space-x-2 mb-4 md:mb-0">
+              <span className="text-xl font-bold text-white">EntrepreneurConnect</span>
+            </div>
+            <div className="flex space-x-8 text-gray-400">
+              <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+              <Link href="/discover" className="hover:text-white transition-colors">Découvrir</Link>
+              <Link href="/messages" className="hover:text-white transition-colors">Messages</Link>
+              <Link href="/events" className="hover:text-white transition-colors">Événements</Link>
+              
+              <Link href="/profile" className="hover:text-white transition-colors">Profil</Link>
+            </div>
+          </div>
+          <div className="border-t border-white/10 mt-8 pt-8 text-center">
+            <p className="text-gray-400">&copy; 2025 EntrepreneurConnect. Tous droits réservés.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -29,17 +29,27 @@ const Navigation = () => {
   const [pendingConnections, setPendingConnections] = useState(0);
 
   // Récupérer le nombre de notifications non lues
+ 
+
   const fetchNotifications = async () => {
     if (!user?.id) return;
     
     try {
-      const { count } = await supabase
+      // Notifications classiques
+      const { count: notifCount } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('is_read', false);
-
-      setNotifications(count || 0);
+  
+      // Demandes de connexion en attente
+      const { count: connectionRequests } = await supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('connected_user_id', user.id)
+        .eq('status', 'pending');
+  
+      setNotifications((notifCount || 0) + (connectionRequests || 0));
     } catch (error) {
       console.error('Erreur notifications:', error);
     }
@@ -184,8 +194,11 @@ const Navigation = () => {
                   title={item.description}
                 >
                   <Icon className="h-5 w-5" />
+                  
+
+
                   <span className="font-medium">{item.name}</span>
-                  {item.badge && item.badge > 0 && (
+                  {item.badge > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
                       {item.badge > 9 ? '9+' : item.badge}
                     </span>
@@ -198,14 +211,16 @@ const Navigation = () => {
           {/* Right side - Notifications + Profile */}
           <div className="flex items-center space-x-4">
             {/* Notifications */}
-            <button className="relative p-2 text-gray-300 hover:text-white transition-colors">
+            <Link href="/connections" className="relative p-2 text-gray-300 hover:text-white transition-colors">
               <Bell className="h-5 w-5" />
               {notifications > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
                   {notifications > 9 ? '9+' : notifications}
                 </span>
               )}
-            </button>
+            </Link>
+            
+            
 
             {/* Profile Dropdown */}
             <div className="relative profile-dropdown">
@@ -277,6 +292,8 @@ const Navigation = () => {
                       <span className="font-medium">{item.name}</span>
                       <p className="text-xs text-gray-400">{item.description}</p>
                     </div>
+
+
                     {item.badge && item.badge > 0 && (
                       <span className="bg-red-500 text-white rounded-full px-2 py-1 text-xs font-bold">
                         {item.badge > 9 ? '9+' : item.badge}

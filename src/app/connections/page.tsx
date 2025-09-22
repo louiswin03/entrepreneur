@@ -539,6 +539,27 @@ const ConnectionsPageContent = () => {
           )}
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="bg-black/40 backdrop-blur-md border-t border-white/10 py-12 px-4 mt-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center space-x-2 mb-4 md:mb-0">
+              <span className="text-xl font-bold text-white">EntrepreneurConnect</span>
+            </div>
+            <div className="flex space-x-8 text-gray-400">
+              <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+              <Link href="/discover" className="hover:text-white transition-colors">Découvrir</Link>
+              <Link href="/messages" className="hover:text-white transition-colors">Messages</Link>
+              <Link href="/events" className="hover:text-white transition-colors">Événements</Link>
+              <Link href="/profile" className="hover:text-white transition-colors">Profil</Link>
+            </div>
+          </div>
+          <div className="border-t border-white/10 mt-8 pt-8 text-center">
+            <p className="text-gray-400">&copy; 2025 EntrepreneurConnect. Tous droits réservés.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
