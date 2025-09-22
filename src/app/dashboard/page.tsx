@@ -654,7 +654,6 @@ const DashboardContent = () => {
               <Link href="/discover" className="hover:text-white transition-colors">Découvrir</Link>
               <Link href="/messages" className="hover:text-white transition-colors">Messages</Link>
               <Link href="/events" className="hover:text-white transition-colors">Événements</Link>
-              
               <Link href="/profile" className="hover:text-white transition-colors">Profil</Link>
             </div>
           </div>
